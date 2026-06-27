@@ -20,3 +20,73 @@ body,
 .cursor-none * {
   cursor: none;
 }
+
+/* ---- Aurora arkaplan (reactbits "Aurora/Particles" ruhunda, WebGL'siz) ---- */
+.eksim-aurora {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  mix-blend-mode: screen;
+  opacity: 0.55;
+  will-change: transform;
+}
+.eksim-aurora--energy {
+  width: 55%;
+  height: 55%;
+  left: -8%;
+  top: 8%;
+  background: radial-gradient(circle at center, #2ea6ff 0%, rgba(46, 166, 255, 0) 70%);
+  animation: eksim-drift-a 22s ease-in-out infinite;
+}
+.eksim-aurora--food {
+  width: 50%;
+  height: 50%;
+  right: -6%;
+  bottom: 2%;
+  background: radial-gradient(circle at center, #34d399 0%, rgba(52, 211, 153, 0) 70%);
+  animation: eksim-drift-b 26s ease-in-out infinite;
+}
+.eksim-aurora--glow {
+  width: 45%;
+  height: 45%;
+  left: 35%;
+  top: 30%;
+  background: radial-gradient(circle at center, #7dd3fc 0%, rgba(125, 211, 252, 0) 70%);
+  opacity: 0.35;
+  animation: eksim-drift-c 30s ease-in-out infinite;
+}
+
+@keyframes eksim-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(8%, 6%, 0) scale(1.18); }
+}
+@keyframes eksim-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50% { transform: translate3d(-7%, -5%, 0) scale(0.9); }
+}
+@keyframes eksim-drift-c {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(0.95); }
+  50% { transform: translate3d(5%, -8%, 0) scale(1.15); }
+}
+
+/* Nokta ızgarası (derinlik hissi). */
+.eksim-grid {
+  background-image: radial-gradient(rgba(125, 211, 252, 0.5) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+
+/* Kenar karartma (vinyet). */
+.eksim-vignette {
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(5, 9, 18, 0.85) 100%);
+}
+
+/* Boştaki marker halkasının yumuşak nabzı (görünürlük). */
+.eksim-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: eksim-halo-pulse 3.2s ease-in-out infinite;
+}
+@keyframes eksim-halo-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.28; }
+  50% { transform: scale(1.35); opacity: 0.08; }
+}

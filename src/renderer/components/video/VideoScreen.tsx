@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { IntroScreen } from '../intro/IntroScreen'
 import { ipcService } from '../../services/ipcService'
 import { useKioskStore } from '../../store/useKioskStore'
 import { LocalMp4Source, type ResolvedVideo } from '../../video/IVideoSource'
@@ -29,6 +30,7 @@ export function VideoScreen(): React.JSX.Element {
   const activeLocation = useKioskStore((s) => s.activeLocation)
   const setActiveLocation = useKioskStore((s) => s.setActiveLocation)
   const [failed, setFailed] = useState(false)
+  const [intro, setIntro] = useState(true)
 
   // Harita penceresinden gelen figür olaylarını dinle.
   useEffect(() => {
@@ -122,6 +124,8 @@ export function VideoScreen(): React.JSX.Element {
           )}
         </AnimatePresence>
       </div>
+
+      {intro && <IntroScreen onDone={() => setIntro(false)} />}
     </div>
   )
 }

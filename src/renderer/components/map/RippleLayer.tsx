@@ -23,18 +23,18 @@ export function RippleLayer({ point, color }: RippleLayerProps): React.JSX.Eleme
     const ctx = gsap.context(() => {
       gsap.fromTo(
         '.eksim-ripple',
-        { attr: { r: 0 }, opacity: 0.6 },
+        { attr: { r: 0 }, opacity: 0.65 },
         {
-          attr: { r: 38 },
+          attr: { r: 56 },
           opacity: 0,
-          duration: 2.6,
+          duration: 2.8,
           ease: 'power1.out',
           repeat: -1,
-          stagger: 0.85
+          stagger: 0.9
         }
       )
       gsap.to('.eksim-core', {
-        attr: { r: 4.4 },
+        attr: { r: 6 },
         duration: 0.9,
         ease: 'sine.inOut',
         repeat: -1,
@@ -53,11 +53,11 @@ export function RippleLayer({ point, color }: RippleLayerProps): React.JSX.Eleme
           r={0}
           fill="none"
           stroke={color}
-          strokeWidth={1.1}
+          strokeWidth={1.6}
         />
       ))}
-      <circle className="eksim-core" r={3} fill={color} />
-      <circle r={1.6} fill="#ffffff" />
+      <circle className="eksim-core" r={4} fill={color} />
+      <circle r={2.2} fill="#ffffff" />
     </g>
   )
 }
