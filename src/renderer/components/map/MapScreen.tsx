@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { TurkeyMap } from './TurkeyMap'
 import { MapBackground } from './MapBackground'
+import { EnergyGrid } from './EnergyGrid'
 import { LocationMarker } from './LocationMarker'
 import { MapIdlePanel } from './MapIdlePanel'
 import { RippleLayer } from './RippleLayer'
@@ -106,6 +107,8 @@ export function MapScreen(): React.JSX.Element {
 
       <div className="absolute inset-0 z-10">
         <TurkeyMap svgRef={svgRef}>
+          <EnergyGrid locations={EKSIM_LOCATIONS} />
+
           {EKSIM_LOCATIONS.map((loc) => (
             <LocationMarker
               key={loc.id}
