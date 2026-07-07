@@ -57,10 +57,10 @@ export function EnergyGrid({ locations }: EnergyGridProps): React.JSX.Element {
         yoyo: true,
         stagger: 0.3
       })
+      // PERF: scale (transform) filtreli daireyi her kare yeniden rasterize
+      // ettirir. Twinkle hissi zaten opacity nabzından gelir → yalnızca opacity.
       gsap.to('.eg-city', {
         opacity: 0.9,
-        scale: 1.4,
-        svgOrigin: '0 0',
         duration: 1.8,
         ease: 'sine.inOut',
         repeat: -1,
@@ -97,16 +97,28 @@ export function EnergyGrid({ locations }: EnergyGridProps): React.JSX.Element {
         />
       ))}
 
-      {/* Enerji ağı arkları. */}
+      {/* Enerji ağı arkları.
+          PERF: Glow filtresi yalnızca STATİK/opacity-animasyonlu `.eg-base`'e
+          uygulanır (filtre rasteri cache'lenir, opacity kompozit ucuz). Sürekli
+          strokeDashoffset ile akan `.eg-flow` filtre DIŞINDA tutulur — aksi halde
+          her kare tam yeniden rasterize olurdu. Görünüm: base zaten parlıyor. */}
       {arcs.map((d, i) => (
-        <g key={`a${i}`} filter="url(#eg-glow)">
-          <path className="eg-base" d={d} fill="none" stroke="#5fd0ff" strokeWidth={0.4} opacity={0.25} />
+        <g key={`a${i}`}>
+          <path
+            className="eg-base"
+            d={d}
+            fill="none"
+            stroke="#5fd0ff"
+            strokeWidth={0.4}
+            opacity={0.25}
+            filter="url(#eg-glow)"
+          />
           <path
             className="eg-flow"
             d={d}
             fill="none"
             stroke="#bdf0ff"
-            strokeWidth={0.7}
+            strokeWidth={0.8}
             strokeLinecap="round"
             strokeDasharray="3 37"
           />

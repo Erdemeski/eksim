@@ -43,6 +43,12 @@ export function createKioskWindow(role: WindowRole, bounds: Electron.Rectangle):
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // KRİTİK (kiosk): İki monitörden yalnızca biri odakta olabilir; video
+      // penceresi (Monitör 2) hiç odak almaz. Varsayılan backgroundThrottling
+      // odaksız/örtülü pencerenin timer/rAF/video kompozisyonunu ~1fps'e düşürür
+      // → videoda ciddi takılma. Kiosk'ta her iki ekran da her zaman tam hızda
+      // çalışmalı, bu yüzden kapatılır (app düzeyi switch'lerle birlikte).
+      backgroundThrottling: false,
       additionalArguments: [`${WINDOW_ROLE_ARG}${role}`]
     }
   })

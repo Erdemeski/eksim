@@ -5,7 +5,9 @@ interface ParticleFieldProps {
 }
 
 const COLORS = ['#2EA6FF', '#34D399', '#7DD3FC']
-const LINK_DIST = 120
+const LINK_DIST = 110
+/** Arka plan efekti için kare sınırı — yavaş parçacıklarda fark edilmez, CPU ~½. */
+const FPS_CAP = 30
 
 interface Particle {
   x: number
@@ -31,10 +33,14 @@ export function ParticleField({ className }: ParticleFieldProps): React.JSX.Elem
     if (!canvas || !parent || !ctx) return
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    // Erişilebilirlik + düşük güç: hareket azaltılmışsa tek statik kare çiz.
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     let w = 0
     let h = 0
     let particles: Particle[] = []
     let raf = 0
+    let running = false
+    let last = 0
 
     const resize = (): void => {
       w = parent.clientWidth
@@ -44,7 +50,7 @@ export function ParticleField({ className }: ParticleFieldProps): React.JSX.Elem
       canvas.style.width = `${w}px`
       canvas.style.height = `${h}px`
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      const count = Math.round(Math.min(90, (w * h) / 16000))
+      const count = Math.round(Math.min(60, (w * h) / 16000))
       particles = Array.from({ length: count }, () => ({
         x: Math.random() * w,
         y: Math.random() * h,
@@ -53,9 +59,11 @@ export function ParticleField({ className }: ParticleFieldProps): React.JSX.Elem
         r: Math.random() * 1.6 + 0.6,
         color: COLORS[Math.floor(Math.random() * COLORS.length)]
       }))
+      if (reduce) step() // hareket kapalıyken yeniden boyutta tek kare tazele
     }
 
-    const tick = (): void => {
+    /** Bir kareyi ilerlet + çiz (RAF döngüsünden bağımsız, tek çağrılabilir). */
+    const step = (): void => {
       ctx.clearRect(0, 0, w, h)
 
       for (const p of particles) {
@@ -88,18 +96,45 @@ export function ParticleField({ className }: ParticleFieldProps): React.JSX.Elem
           }
         }
       }
+    }
 
-      raf = requestAnimationFrame(tick)
+    const frameInterval = 1000 / FPS_CAP
+    const loop = (now: number): void => {
+      raf = requestAnimationFrame(loop)
+      if (now - last < frameInterval) return // FPS sınırı: pahalı O(n²) işi atla
+      last = now
+      step()
+    }
+
+    const start = (): void => {
+      if (running || reduce) return
+      running = true
+      last = 0
+      raf = requestAnimationFrame(loop)
+    }
+
+    const stop = (): void => {
+      running = false
+      cancelAnimationFrame(raf)
+    }
+
+    // Pencere/sekme gizliyken (diğer monitör önde vb.) döngüyü tamamen durdur.
+    const onVisibility = (): void => {
+      if (document.hidden) stop()
+      else start()
     }
 
     const ro = new ResizeObserver(resize)
     ro.observe(parent)
     resize()
-    tick()
+    if (reduce) step()
+    else start()
+    document.addEventListener('visibilitychange', onVisibility)
 
     return () => {
-      cancelAnimationFrame(raf)
+      stop()
       ro.disconnect()
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [])
 

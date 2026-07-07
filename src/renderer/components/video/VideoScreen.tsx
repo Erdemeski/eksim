@@ -4,7 +4,6 @@ import { IntroScreen } from '../intro/IntroScreen'
 import { ipcService } from '../../services/ipcService'
 import { useKioskStore } from '../../store/useKioskStore'
 import { LocalMp4Source, type ResolvedVideo } from '../../video/IVideoSource'
-import { FALLBACK_VIDEO_URL } from '@shared/locations'
 import type { EksimLocation } from '@shared/types'
 
 const SECTOR_LABEL: Record<EksimLocation['sector'], string> = {
@@ -15,8 +14,6 @@ const SECTOR_ACCENT: Record<EksimLocation['sector'], string> = {
   energy: 'text-eksim-energy',
   food: 'text-eksim-food'
 }
-
-const FALLBACK_VIDEO: ResolvedVideo = { src: FALLBACK_VIDEO_URL, kind: 'fallback', loop: true }
 
 /**
  * Monitör 2 — dikey video ekranı.
@@ -52,7 +49,7 @@ export function VideoScreen(): React.JSX.Element {
     }
   }, [setActiveLocation])
 
-  const resolved: ResolvedVideo = failed ? FALLBACK_VIDEO : source.resolve(activeLocation)
+  const resolved: ResolvedVideo = failed ? source.resolveFallback() : source.resolve(activeLocation)
 
   const handleError = (): void => {
     // Lokal/çevrimiçi kaynak yüklenemediyse fallback'e düş (zincir bir kez).
@@ -60,15 +57,29 @@ export function VideoScreen(): React.JSX.Element {
   }
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-black">
+    <div className="relative h-full w-full overflow-hidden bg-eksim-ink">
+      {/* Çevrimdışı/yükleniyor nihai yedeği: video kare veremezse (ör. internet
+          yokken uzak fallback) düz siyah yerine marka temalı zemin görünür. */}
+      <div className="absolute inset-0 bg-eksim-ink">
+        <div
+          className="absolute inset-0 opacity-60"
+          style={{
+            background: 'radial-gradient(60% 50% at 50% 40%, rgba(46,166,255,0.18), transparent 70%)'
+          }}
+        />
+      </div>
+
       <AnimatePresence mode="popLayout">
         <motion.div
           key={resolved.src}
           className="absolute inset-0"
-          initial={{ clipPath: 'inset(100% 0% 0% 0%)', opacity: 0.4, filter: 'blur(16px)', scale: 1.05 }}
-          animate={{ clipPath: 'inset(0% 0% 0% 0%)', opacity: 1, filter: 'blur(0px)', scale: 1 }}
-          exit={{ opacity: 0, filter: 'blur(12px)' }}
-          transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
+          // NOT: Tam ekran video üzerinde animasyonlu filter: blur(...) çok pahalı
+          // (her kare yeniden rasterize). Reveal hissi clipPath + opacity + hafif
+          // scale ile korunur; bunlar GPU-composite edilir, blur'suz akıcıdır.
+          initial={{ clipPath: 'inset(100% 0% 0% 0%)', opacity: 0.4, scale: 1.05 }}
+          animate={{ clipPath: 'inset(0% 0% 0% 0%)', opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 1.02 }}
+          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         >
           <video
             className="h-full w-full object-cover"
@@ -77,6 +88,9 @@ export function VideoScreen(): React.JSX.Element {
             muted
             loop={resolved.loop}
             playsInline
+            preload="auto"
+            disablePictureInPicture
+            disableRemotePlayback
             onError={handleError}
           />
         </motion.div>

@@ -18,8 +18,14 @@ const SECTOR_COLOR: Record<EksimLocation['sector'], string> = {
   food: '#34D399'
 }
 
-/** Etkileşim olmadan bu süre geçince "attract/boşta" moduna dön. */
+/**
+ * Tangible (figür) modu için boşta güvenlik ağı: figür kaldırma sinyali
+ * kaçarsa bu süre sonunda boşta moda dön. Pointer (imleç) modunda kullanılmaz —
+ * orada deaktivasyon imlecin konumdan ayrılmasına bağlıdır.
+ */
 const IDLE_MS = 15000
+/** Pointer modu: imleç aktif konumdan ayrıldıktan sonra videoyu durdurma payı. */
+const LEAVE_GRACE_MS = 400
 
 /**
  * Monitör 1 — Türkiye SVG haritası deneyimi.
@@ -55,6 +61,7 @@ export function MapScreen(): React.JSX.Element {
 
   const activate = useCallback(
     (location: EksimLocation) => {
+      window.clearTimeout(idleTimer.current) // bekleyen grace/idle iptal
       const result: FigureResult = {
         mode: figureTouch ? 'tangible' : 'pointer',
         centroid: location.svgPoint ?? { x: 0, y: 0 },
@@ -65,9 +72,25 @@ export function MapScreen(): React.JSX.Element {
       setActiveLocation(location)
       const payload: FigureEventPayload = { result, location }
       ipcService.emitFigure(payload)
-      armIdleTimer()
+      // Pointer modu: imleç konumda kaldığı sürece video döner (loop) ve boşta
+      // zamanlayıcı YOK — ayrılınca durur (bkz. handleMarkerHover). Tangible
+      // modda ise figür kaldırma kaçarsa diye idle güvenlik ağı kurulur.
+      if (figureTouch) armIdleTimer()
     },
     [figureTouch, setFigure, setActiveLocation, armIdleTimer]
+  )
+
+  // Pointer modu: yalnızca AKTİF konumun imleç varlığı deaktivasyonu yönetir.
+  // İmleç aktif marker'da → oynatım sürer; ayrılınca → kısa grace sonrası durur
+  // (jitter/geçiş boşluklarına tolerans). Diğer marker'ların hover'ı burada
+  // yok sayılır (kendi dwell'lerini kendileri yönetir).
+  const handleMarkerHover = useCallback(
+    (loc: EksimLocation, hovering: boolean) => {
+      if (loc.id !== useKioskStore.getState().activeLocation?.id) return
+      window.clearTimeout(idleTimer.current)
+      if (!hovering) idleTimer.current = window.setTimeout(deactivate, LEAVE_GRACE_MS)
+    },
+    [deactivate]
   )
 
   // Tangible mod: 3 noktalı figür → en yakın tesis. Pointer sonuçları yok sayılır
@@ -118,10 +141,7 @@ export function MapScreen(): React.JSX.Element {
               active={activeLocation?.id === loc.id}
               interactive={!figureTouch}
               onActivate={activate}
-              onHoverChange={(hovering) => {
-                if (hovering) window.clearTimeout(idleTimer.current)
-                else armIdleTimer()
-              }}
+              onHoverChange={(hovering) => handleMarkerHover(loc, hovering)}
             />
           ))}
 

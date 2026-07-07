@@ -49,10 +49,14 @@ export function LocationMarker({
     setCount(countdownSeconds)
   }
 
-  const startDwell = (): void => {
-    if (!interactive || active) return
-    setHovering(true)
+  // İmleç bu marker'a girdi. onHoverChange her durumda tetiklenir (aktif marker
+  // da dahil) → ebeveyn "imleç konumda mı" bilgisini bu sinyalle izler. Marker
+  // zaten aktifse dwell/geri sayım BAŞLAMAZ; video sürekli oynatımda kalır.
+  const handleEnter = (): void => {
+    if (!interactive) return
     onHoverChange?.(true)
+    if (active) return
+    setHovering(true)
 
     ctxRef.current = gsap.context(() => {
       // Çekirdek büyür.
@@ -81,9 +85,12 @@ export function LocationMarker({
     }, groupRef)
   }
 
-  const endDwell = (): void => {
-    setHovering(false)
+  // İmleç bu marker'dan ayrıldı. Aktif marker'da bu, ebeveynin deaktivasyonu
+  // (kısa grace ile) tetiklemesini sağlar; aktif değilse dwell geri sayımı iptal.
+  const handleLeave = (): void => {
+    if (!interactive) return
     onHoverChange?.(false)
+    setHovering(false)
     cancelDwell()
   }
 
@@ -104,12 +111,13 @@ export function LocationMarker({
     <g
       ref={groupRef}
       transform={`translate(${point.x}, ${point.y})`}
-      onPointerEnter={startDwell}
-      onPointerLeave={endDwell}
+      onPointerEnter={handleEnter}
+      onPointerLeave={handleLeave}
       style={{ cursor: interactive ? 'pointer' : 'default' }}
     >
-      {/* Geniş şeffaf hover hedefi. */}
-      <circle r={28} fill="transparent" pointerEvents={interactive && !active ? 'all' : 'none'} />
+      {/* Geniş şeffaf hover hedefi. Aktifken de canlı kalır ki imlecin konumdan
+          AYRILMASI algılanabilsin (ayrılınca video durur). */}
+      <circle r={28} fill="transparent" pointerEvents={interactive ? 'all' : 'none'} />
 
       {/* Boşta görünürlük halkası (nabız). */}
       {!active && !showDwell && (

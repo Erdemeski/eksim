@@ -18,6 +18,23 @@ import { DEFAULT_TOUCH_CONFIG } from '../shared/config'
  * Burada yalnızca yaşam döngüsü ve global kısayollar kalır.
  */
 
+/**
+ * Chromium anahtarları (app hazır olmadan, modül yüklenirken uygulanmalı).
+ *
+ * İkinci monitördeki video penceresi hiç odak almadığı için Chromium onu
+ * "arka plan/örtülü" sayıp throttle eder → video ~1fps'e düşer (hem lokal hem
+ * çevrimiçi mp4'te ciddi takılma). Aşağıdaki üç anahtar bu davranışı tamamen
+ * kapatır; webPreferences.backgroundThrottling=false ile birlikte kusursuz,
+ * tam-hız oynatım sağlar. Kiosk'ta her iki ekran da daima ön planda kabul edilir.
+ */
+function configureChromiumForKiosk(): void {
+  app.commandLine.appendSwitch('disable-background-timer-throttling')
+  app.commandLine.appendSwitch('disable-renderer-backgrounding')
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+}
+
+configureChromiumForKiosk()
+
 let ipcContext: IpcContext | null = null
 /** Çalışma zamanı figureTouch durumu (cold start varsayılanından başlar). */
 let figureTouch = DEFAULT_TOUCH_CONFIG.figureTouch

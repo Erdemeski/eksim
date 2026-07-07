@@ -131,6 +131,10 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
           opacity="0.6"
         />
         <path d={TURKEY_PATH_D} fill="none" stroke="#d8f6ff" strokeWidth="0.35" opacity="0.9" />
+        {/* PERF: Bu çizgi strokeDashoffset ile sürekli animasyonlu. SVG glow
+            filtresi (feGaussianBlur) animasyonlu öğede her kare yeniden
+            rasterize edilir → pahalı. Glow zaten üstteki STATİK `.tr-coast`
+            katmanında var; akan çizgi filtresiz de aynı görünür. */}
         <path
           className="tr-coast-flow"
           d={TURKEY_PATH_D}
@@ -139,7 +143,6 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
           strokeWidth="0.7"
           strokeLinecap="round"
           strokeDasharray="6 170"
-          filter="url(#tr-coast-glow)"
         />
 
         {children}
