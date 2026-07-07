@@ -15,9 +15,10 @@ interface TurkeyMapProps {
  *
  * Görsel: NASA Blue Marble (Web Mercator, viewBox ile hizalı). turkey.svg
  * silüeti hem parlak Türkiye'yi kırpan maske (clip) hem de mevcut SİYASİ dış
- * hattı korur. Türkiye dışı coğrafya, kenarlara doğru uzaya solan KOYU bir
- * uydu silüeti olur. Kıyı, GSAP ile akan/parlayan canlı bir enerji hattıdır;
- * kara hafifçe "nefes alır" (yavaş drift). Sabit değil — modern ve canlı.
+ * hattı korur. Türkiye dışı coğrafya, kenarlara doğru uzaya solan HAFİF BEYAZ
+ * bir sisle örtülü uydu silüeti olur (bkz. `tr-dark` filtresi). Kıyı, GSAP ile
+ * akan/parlayan canlı bir enerji hattıdır; kara hafifçe "nefes alır" (yavaş
+ * drift). Sabit değil — modern ve canlı.
  */
 export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Element {
   const rootRef = useRef<SVGGElement>(null)
@@ -33,8 +34,11 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
         { strokeDashoffset: 0 },
         { strokeDashoffset: -180, duration: 5, ease: 'none', repeat: -1 }
       )
-      // Kıyı parlamasının yumuşak nabzı.
-      gsap.to('.tr-coast', { opacity: 0.95, duration: 2.6, ease: 'sine.inOut', repeat: -1, yoyo: true })
+      // Kıyı parlamasının yumuşak nabzı. NOT: aralık DÜŞÜK/transparan tutulur
+      // (bkz. JSX'teki opacity="0.18") — bu statik mavi hat, rüzgar amblemleriyle
+      // aynı mavi tonda olduğu için baskın olursa kafa karıştırıyordu. Akan
+      // beyaz akım (.tr-coast-flow) asıl "elektrik" sinyali olarak öne çıkar.
+      gsap.to('.tr-coast', { opacity: 0.32, duration: 2.6, ease: 'sine.inOut', repeat: -1, yoyo: true })
     }, rootRef)
     return () => ctx.revert()
   }, [])
@@ -50,7 +54,10 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
         <clipPath id="tr-clip">
           <path d={TURKEY_PATH_D} />
         </clipPath>
-        {/* Türkiye dışını belirgin karartıp hafif lacivere çeken matris. */}
+        {/* Türkiye dışını desatüre edip HAFİF BEYAZ bir sise çeken matris.
+            Eşit R/G/B ağırlığı (renk sapması yok, laciverte kaymaz) + ölçülü
+            pozitif ofset (+0.3) ile görüntü hafifçe beyaza doğru kaydırılır —
+            Türkiye'nin kendisi hâlâ en parlak/doygun alan olarak öne çıkar. */}
         <filter id="tr-dark" x="0" y="0" width="100%" height="100%">
           <feColorMatrix
             type="matrix"
@@ -96,7 +103,7 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
           />
         </g>
 
-        {/* 1b) Dış bölgeyi daha da derinleştiren karartma perdesi. */}
+        {/* 1b) Dış bölgeyi daha da sisleyen ÇOK hafif beyaz perde. */}
         <rect
           x={MAP_RECT.x}
           y={MAP_RECT.y}
@@ -120,7 +127,11 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
           <path d={TURKEY_PATH_D} fill="none" stroke="#02080f" strokeWidth="5" opacity="0.55" />
         </g>
 
-        {/* 3) Parlayan kıyı + akan enerji hattı. */}
+        {/* 3) Kıyı hattı + akan enerji akımı.
+            NOT: `.tr-coast` (sabit mavi hat) BİLEREK çok transparan tutulur —
+            rüzgar türbini amblemleri de mavi olduğu için baskın bir mavi kıyı
+            çizgisi ikisini ayırt edilmez kılıyordu. Kıyı artık yalnızca ince
+            bir ambiyans; asıl "elektrik akımı" sinyali akan BEYAZ çizgidir. */}
         <path
           className="tr-coast"
           d={TURKEY_PATH_D}
@@ -128,9 +139,9 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
           stroke="#5fd0ff"
           strokeWidth="0.9"
           filter="url(#tr-coast-glow)"
-          opacity="0.6"
+          opacity="0.18"
         />
-        <path d={TURKEY_PATH_D} fill="none" stroke="#d8f6ff" strokeWidth="0.35" opacity="0.9" />
+        <path d={TURKEY_PATH_D} fill="none" stroke="#d8f6ff" strokeWidth="0.3" opacity="0.5" />
         {/* PERF: Bu çizgi strokeDashoffset ile sürekli animasyonlu. SVG glow
             filtresi (feGaussianBlur) animasyonlu öğede her kare yeniden
             rasterize edilir → pahalı. Glow zaten üstteki STATİK `.tr-coast`
@@ -140,7 +151,7 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
           d={TURKEY_PATH_D}
           fill="none"
           stroke="#ffffff"
-          strokeWidth="0.7"
+          strokeWidth="0.85"
           strokeLinecap="round"
           strokeDasharray="6 170"
         />

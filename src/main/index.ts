@@ -1,4 +1,5 @@
 import { app, globalShortcut, BrowserWindow } from 'electron'
+import { inspect } from 'node:util'
 import { resolveLayout } from './windows/DisplayManager'
 import { createMapWindow } from './windows/createMapWindow'
 import { createVideoWindow } from './windows/createVideoWindow'
@@ -21,19 +22,52 @@ import { DEFAULT_TOUCH_CONFIG } from '../shared/config'
 /**
  * Chromium anahtarları (app hazır olmadan, modül yüklenirken uygulanmalı).
  *
- * İkinci monitördeki video penceresi hiç odak almadığı için Chromium onu
- * "arka plan/örtülü" sayıp throttle eder → video ~1fps'e düşer (hem lokal hem
- * çevrimiçi mp4'te ciddi takılma). Aşağıdaki üç anahtar bu davranışı tamamen
- * kapatır; webPreferences.backgroundThrottling=false ile birlikte kusursuz,
- * tam-hız oynatım sağlar. Kiosk'ta her iki ekran da daima ön planda kabul edilir.
+ * A) Odak/throttling: İkinci monitördeki video penceresi hiç odak almadığı için
+ *    Chromium onu "arka plan/örtülü" sayıp throttle eder → video ~1fps'e düşer.
+ *    Aşağıdaki üç anahtar + webPreferences.backgroundThrottling=false bunu kapatır.
+ *
+ * B) GPU kompozisyonu: yalnızca GÜVENLİ rasterization/zero-copy ipuçları.
+ *    NOT (geri alındı): Daha önce burada `ignore-gpu-blocklist` +
+ *    `enable-features=D3D11VideoDecoder` ile donanım video decode ZORLANIYORDU.
+ *    Bu, Chromium'un bu GPU/sürücü için bilerek devre dışı bıraktığı decode
+ *    yolunu zorla açtı ve konsolda tekrarlayan
+ *    `ffmpeg_common.cc: Unsupported pixel format: -1` hatasına + saniyede bir
+ *    kısa video takılmalarına yol açtı (decoder her hata sonrası sıfırlanıyor).
+ *    Blocklist'i bypass etmek yerine Chromium'un kendi güvenli kararına
+ *    (gerekirse software decode) güveniliyor; asıl performans kazancı render
+ *    tarafındaki (harita) iş yükünü azaltmaktan geliyor (bkz. GSAP fps sınırı,
+ *    EnergyGrid MST, aurora sadeleştirmesi).
  */
 function configureChromiumForKiosk(): void {
+  // A) Kiosk'ta her iki ekran da daima ön planda kabul edilsin.
   app.commandLine.appendSwitch('disable-background-timer-throttling')
   app.commandLine.appendSwitch('disable-renderer-backgrounding')
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+
+  // B) Yalnızca güvenli, blocklist'i etkilemeyen kompozisyon ipuçları.
+  app.commandLine.appendSwitch('enable-gpu-rasterization')
+  app.commandLine.appendSwitch('enable-zero-copy')
 }
 
 configureChromiumForKiosk()
+
+/**
+ * Teşhis: GPU özellik durumunu bir kez logla (kalıcı — sorun tekrarlarsa hızlı
+ * teşhis için). `video_decode`/`gpu_compositing` değerleri bu makinenin
+ * Chromium'un GPU/sürücü değerlendirmesinden ne aldığını gösterir; artık
+ * zorlanmıyor, Chromium'un kendi (güvenli) kararı yansır. Dev'de ayrıca
+ * pencerede `chrome://gpu` ile detaylı doğrulanabilir.
+ */
+function logGpuStatus(): void {
+  const status = app.getGPUFeatureStatus()
+  // eslint-disable-next-line no-console
+  console.log('[GPU] feature status:', inspect(status, { colors: false, depth: 2 }))
+  app
+    .getGPUInfo('basic')
+    // eslint-disable-next-line no-console
+    .then((info) => console.log('[GPU] info:', inspect(info, { colors: false, depth: 3 })))
+    .catch(() => {})
+}
 
 let ipcContext: IpcContext | null = null
 /** Çalışma zamanı figureTouch durumu (cold start varsayılanından başlar). */
@@ -54,6 +88,7 @@ function registerShortcuts(): void {
 }
 
 app.whenReady().then(() => {
+  logGpuStatus()
   const layout = resolveLayout()
   const mapWindow = createMapWindow(layout.map)
   const videoWindow = createVideoWindow(layout.video)

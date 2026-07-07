@@ -33,40 +33,64 @@ function arcPath(a: Point, b: Point): string {
 }
 
 /**
+ * PERF + görsel: tüm noktaları birbirine bağlayan TAM ÇİZGE yerine (n tesiste
+ * n*(n-1)/2 ark — tesis sayısı arttıkça karesel büyür ve her ark filtre/GSAP
+ * maliyeti taşır) minimum yayılan ağaç (Prim) kullanılır → tam n-1 ark, hepsi
+ * bağlı, çapraz kesişen "spagetti" yok. Gerçek enerji şebekeleri de böyle
+ * seyrek/ağaç yapıdadır — hem daha hafif hem daha "premium" görünür. n küçük
+ * olduğu için O(n²) MST hesaplaması önemsiz (render başına bir kez).
+ */
+function buildSpanningEdges(points: Point[]): Array<[number, number]> {
+  const n = points.length
+  if (n < 2) return []
+  const inTree = new Array<boolean>(n).fill(false)
+  const minDist = new Array<number>(n).fill(Infinity)
+  const parent = new Array<number>(n).fill(-1)
+  minDist[0] = 0
+
+  for (let step = 0; step < n; step++) {
+    let u = -1
+    for (let i = 0; i < n; i++) {
+      if (!inTree[i] && (u === -1 || minDist[i] < minDist[u])) u = i
+    }
+    if (u === -1) break
+    inTree[u] = true
+    for (let v = 0; v < n; v++) {
+      if (inTree[v]) continue
+      const d = Math.hypot(points[u].x - points[v].x, points[u].y - points[v].y)
+      if (d < minDist[v]) {
+        minDist[v] = d
+        parent[v] = u
+      }
+    }
+  }
+
+  const edges: Array<[number, number]> = []
+  for (let v = 0; v < n; v++) {
+    if (parent[v] !== -1) edges.push([parent[v], v])
+  }
+  return edges
+}
+
+/**
  * Tesisler arasında akan, parlayan enerji ağı + gece şehir ışıkları.
- * Canlı/modern doku katmanı (reactbits/şebeke hissi), GSAP ile akış ve titreşim.
+ * Canlı/modern doku katmanı (reactbits/şebeke hissi).
+ *
+ * PERF: taban çizgisi nabzı (`.eg-base`) ve şehir ışığı titremesi (`.eg-city`)
+ * artık GSAP DEĞİL, CSS `@keyframes` ile çalışır (bkz. index.css) — ikisi de
+ * salt opacity, tarayıcı compositor thread'inde JS'siz çalıştırır. 17 pinde
+ * ~16 çizgi + 8 ışık için bu, ana iş parçacığı yükünü belirgin azaltır; görünüm
+ * birebir aynı. Stagger, CSS `animationDelay` ile (aşağıda, render'da) verilir.
+ * Akan çizgi (`.eg-flow`, strokeDashoffset) CSS-uyumlu olmadığından GSAP'te kaldı.
  */
 export function EnergyGrid({ locations }: EnergyGridProps): React.JSX.Element {
   const ref = useRef<SVGGElement>(null)
   const points = locations.map(locationToViewBox)
-  const arcs: string[] = []
-  for (let i = 0; i < points.length; i++) {
-    for (let j = i + 1; j < points.length; j++) {
-      arcs.push(arcPath(points[i], points[j]))
-    }
-  }
+  const arcs = buildSpanningEdges(points).map(([i, j]) => arcPath(points[i], points[j]))
 
   useEffect(() => {
     const ctx = gsap.context(() => {
       gsap.to('.eg-flow', { strokeDashoffset: -40, duration: 2.4, ease: 'none', repeat: -1 })
-      gsap.to('.eg-base', {
-        opacity: 0.45,
-        duration: 2.8,
-        ease: 'sine.inOut',
-        repeat: -1,
-        yoyo: true,
-        stagger: 0.3
-      })
-      // PERF: scale (transform) filtreli daireyi her kare yeniden rasterize
-      // ettirir. Twinkle hissi zaten opacity nabzından gelir → yalnızca opacity.
-      gsap.to('.eg-city', {
-        opacity: 0.9,
-        duration: 1.8,
-        ease: 'sine.inOut',
-        repeat: -1,
-        yoyo: true,
-        stagger: { each: 0.25, from: 'random' }
-      })
     }, ref)
     return () => ctx.revert()
   }, [arcs.length])
@@ -83,7 +107,8 @@ export function EnergyGrid({ locations }: EnergyGridProps): React.JSX.Element {
         </filter>
       </defs>
 
-      {/* Şehir ışıkları. */}
+      {/* Şehir ışıkları. animationDelay: eski GSAP stagger'ının (each:0.25,
+          from:'random') yerini alan sabit-ama-karışık gecikme dizisi. */}
       {CITY_LIGHTS.map((p, i) => (
         <circle
           key={`c${i}`}
@@ -94,6 +119,7 @@ export function EnergyGrid({ locations }: EnergyGridProps): React.JSX.Element {
           fill="#fff3cf"
           opacity={0.45}
           filter="url(#eg-glow)"
+          style={{ animationDelay: `${((i * 3 + 1) % 8) * 0.25}s` }}
         />
       ))}
 
@@ -112,6 +138,7 @@ export function EnergyGrid({ locations }: EnergyGridProps): React.JSX.Element {
             strokeWidth={0.4}
             opacity={0.25}
             filter="url(#eg-glow)"
+            style={{ animationDelay: `${i * 0.3}s` }}
           />
           <path
             className="eg-flow"

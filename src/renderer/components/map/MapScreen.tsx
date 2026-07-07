@@ -1,10 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import gsap from 'gsap'
 import { TurkeyMap } from './TurkeyMap'
 import { MapBackground } from './MapBackground'
 import { EnergyGrid } from './EnergyGrid'
 import { LocationMarker } from './LocationMarker'
+import { LocationPinEmblem } from './LocationPinEmblem'
+import { PopupLayer, type DwellState } from './PopupLayer'
 import { MapIdlePanel } from './MapIdlePanel'
 import { RippleLayer } from './RippleLayer'
+import { accentColor } from './SectorGraphics'
+import { BrandLogo } from '../brand/BrandLogo'
 import { IntroScreen } from '../intro/IntroScreen'
 import { useFigureTouch } from '../../hooks/useFigureTouch'
 import { useKioskStore } from '../../store/useKioskStore'
@@ -13,9 +18,9 @@ import { locationToViewBox, nearestLocation, screenToViewBox } from '../../servi
 import { EKSIM_LOCATIONS } from '@shared/locations'
 import type { EksimLocation, FigureEventPayload, FigureResult } from '@shared/types'
 
-const SECTOR_COLOR: Record<EksimLocation['sector'], string> = {
-  energy: '#2EA6FF',
-  food: '#34D399'
+/** Tesis vurgu rengi — hibrit sahalarda ayırt edici mor, tekil türde kendi rengi. */
+function colorOf(loc: EksimLocation): string {
+  return accentColor(loc.kinds)
 }
 
 /**
@@ -26,26 +31,29 @@ const SECTOR_COLOR: Record<EksimLocation['sector'], string> = {
 const IDLE_MS = 15000
 /** Pointer modu: imleç aktif konumdan ayrıldıktan sonra videoyu durdurma payı. */
 const LEAVE_GRACE_MS = 400
+/** Pointer modu: bir pine imleç gelince aktivasyona kadar geri sayım (sn). */
+const DWELL_SECONDS = 3
 
 /**
  * Monitör 1 — Türkiye SVG haritası deneyimi.
  *
  *  - Açılışta GSAP intro.
- *  - figureTouch=false: noktalara hover-dwell (büyüme + magic rings + 3 sn geri
- *    sayım) ile seçim. Tıklama gerekmez.
+ *  - figureTouch=false: pine imleç → 3 sn dwell (geri sayım popup'ta) → seçim.
  *  - figureTouch=true: fiziksel figür (3 nokta) touchMath ile anında seçer.
- *  - Boşta: MapIdlePanel (slogan + dönen özet). Aktifte: RippleLayer + IPC.
+ *  - Boşta: pinler arasında sırayla dönen tanıtım popup'ları (PopupLayer).
  */
 export function MapScreen(): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const idleTimer = useRef<number | undefined>(undefined)
+  const dwellTween = useRef<gsap.core.Tween | null>(null)
 
   const figureTouch = useKioskStore((s) => s.touchConfig.figureTouch)
   const activeLocation = useKioskStore((s) => s.activeLocation)
   const setActiveLocation = useKioskStore((s) => s.setActiveLocation)
   const setFigure = useKioskStore((s) => s.setFigure)
   const [intro, setIntro] = useState(true)
+  const [dwell, setDwell] = useState<DwellState | null>(null)
 
   const deactivate = useCallback(() => {
     window.clearTimeout(idleTimer.current)
@@ -62,6 +70,9 @@ export function MapScreen(): React.JSX.Element {
   const activate = useCallback(
     (location: EksimLocation) => {
       window.clearTimeout(idleTimer.current) // bekleyen grace/idle iptal
+      dwellTween.current?.kill()
+      dwellTween.current = null
+      setDwell(null)
       const result: FigureResult = {
         mode: figureTouch ? 'tangible' : 'pointer',
         centroid: location.svgPoint ?? { x: 0, y: 0 },
@@ -80,21 +91,56 @@ export function MapScreen(): React.JSX.Element {
     [figureTouch, setFigure, setActiveLocation, armIdleTimer]
   )
 
-  // Pointer modu: yalnızca AKTİF konumun imleç varlığı deaktivasyonu yönetir.
-  // İmleç aktif marker'da → oynatım sürer; ayrılınca → kısa grace sonrası durur
-  // (jitter/geçiş boşluklarına tolerans). Diğer marker'ların hover'ı burada
-  // yok sayılır (kendi dwell'lerini kendileri yönetir).
+  const cancelDwell = useCallback(() => {
+    dwellTween.current?.kill()
+    dwellTween.current = null
+    setDwell(null)
+  }, [])
+
+  // Pointer modu geri sayımı MapScreen'de (popup'ı besler). GSAP proxy tween:
+  // secondsLeft (3→1) + pürüzsüz progress (0→1); tamamlanınca aktive eder.
+  const startDwell = useCallback(
+    (location: EksimLocation) => {
+      dwellTween.current?.kill()
+      setDwell({ location, secondsLeft: DWELL_SECONDS, progress: 0 })
+      const proxy = { v: DWELL_SECONDS }
+      dwellTween.current = gsap.to(proxy, {
+        v: 0,
+        duration: DWELL_SECONDS,
+        ease: 'none',
+        onUpdate: () =>
+          setDwell({
+            location,
+            secondsLeft: Math.max(1, Math.ceil(proxy.v)),
+            progress: 1 - proxy.v / DWELL_SECONDS
+          }),
+        onComplete: () => {
+          dwellTween.current = null
+          activate(location)
+        }
+      })
+    },
+    [activate]
+  )
+
+  // İmleç gir/çıkışı: aktif pin → grace (ayrılınca video durur); aktif olmayan
+  // interaktif pin → dwell geri sayımı başlat/iptal (popup içinde görünür).
   const handleMarkerHover = useCallback(
     (loc: EksimLocation, hovering: boolean) => {
-      if (loc.id !== useKioskStore.getState().activeLocation?.id) return
-      window.clearTimeout(idleTimer.current)
-      if (!hovering) idleTimer.current = window.setTimeout(deactivate, LEAVE_GRACE_MS)
+      const activeId = useKioskStore.getState().activeLocation?.id
+      if (loc.id === activeId) {
+        window.clearTimeout(idleTimer.current)
+        if (!hovering) idleTimer.current = window.setTimeout(deactivate, LEAVE_GRACE_MS)
+        return
+      }
+      if (hovering) startDwell(loc)
+      else cancelDwell()
     },
-    [deactivate]
+    [deactivate, startDwell, cancelDwell]
   )
 
   // Tangible mod: 3 noktalı figür → en yakın tesis. Pointer sonuçları yok sayılır
-  // (onları hover-dwell yapan LocationMarker yönetir).
+  // (onları hover-dwell yapan LocationMarker/MapScreen yönetir).
   const handleFigure = useCallback(
     (result: FigureResult) => {
       if (result.mode !== 'tangible') return
@@ -117,30 +163,51 @@ export function MapScreen(): React.JSX.Element {
     () => ipcService.onFigureTouchChanged((v) => useKioskStore.getState().setFigureTouch(v)),
     []
   )
-  useEffect(() => () => window.clearTimeout(idleTimer.current), [])
+  useEffect(
+    () => () => {
+      window.clearTimeout(idleTimer.current)
+      dwellTween.current?.kill()
+    },
+    []
+  )
 
-  const accent = activeLocation ? SECTOR_COLOR[activeLocation.sector] : '#2EA6FF'
+  const accent = activeLocation ? colorOf(activeLocation) : '#2EA6FF'
 
   return (
     <div
       ref={containerRef}
       className={`relative h-full w-full overflow-hidden bg-eksim-ink ${figureTouch ? 'cursor-none' : ''}`}
     >
-      <MapBackground />
+      <BrandLogo />
+
+      {/* PERF: intro (drawMap) ekranı z-50'de tam opak kaplıyor; altındaki
+          parçacık döngüsünü ve EnergyGrid'i bu pencerede durdurmak görünürde
+          hiçbir şeyi değiştirmez ama açılıştaki en ağır CPU/GPU burst'ünü keser. */}
+      <MapBackground paused={!!activeLocation || intro} />
 
       <div className="absolute inset-0 z-10">
         <TurkeyMap svgRef={svgRef}>
-          <EnergyGrid locations={EKSIM_LOCATIONS} />
+          {!intro && <EnergyGrid locations={EKSIM_LOCATIONS} />}
+
+          {/* Pin yanı santral amblemleri (aktif/geri sayım pininde geri çekilir). */}
+          {!intro &&
+            EKSIM_LOCATIONS.map((loc) => (
+              <LocationPinEmblem
+                key={`emb-${loc.id}`}
+                point={locationToViewBox(loc)}
+                kinds={loc.kinds}
+                dimmed={activeLocation?.id === loc.id || dwell?.location.id === loc.id}
+              />
+            ))}
 
           {EKSIM_LOCATIONS.map((loc) => (
             <LocationMarker
               key={loc.id}
               location={loc}
               point={locationToViewBox(loc)}
-              color={SECTOR_COLOR[loc.sector]}
+              color={colorOf(loc)}
               active={activeLocation?.id === loc.id}
               interactive={!figureTouch}
-              onActivate={activate}
               onHoverChange={(hovering) => handleMarkerHover(loc, hovering)}
             />
           ))}
@@ -150,6 +217,16 @@ export function MapScreen(): React.JSX.Element {
           )}
         </TurkeyMap>
       </div>
+
+      {/* Pin popup katmanı (idle tanıtım + geri sayım + aktif detay). */}
+      <PopupLayer
+        locations={EKSIM_LOCATIONS}
+        activeLocation={activeLocation}
+        dwell={dwell}
+        hidden={intro}
+        svgRef={svgRef}
+        containerRef={containerRef}
+      />
 
       <div className="pointer-events-none absolute inset-0 z-20">
         <MapIdlePanel show={!activeLocation && !intro} />

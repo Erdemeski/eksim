@@ -10,23 +10,17 @@ interface LocationMarkerProps {
   active: boolean
   /** Hover-dwell etkileşimi açık mı (figureTouch=false iken true). */
   interactive: boolean
-  /** Saniye cinsinden geri sayım (varsayılan 3). */
-  countdownSeconds?: number
-  onActivate: (location: EksimLocation) => void
-  onHoverChange?: (hovering: boolean) => void
+  /** İmleç gir/çıkışını ebeveyne bildirir (dwell/geri sayım MapScreen'de yönetilir). */
+  onHoverChange?: (hovering: boolean, location: EksimLocation) => void
 }
 
-const PROGRESS_R = 22
-const PROGRESS_C = 2 * Math.PI * PROGRESS_R
-
 /**
- * Haritadaki tek tesis noktası.
+ * Haritadaki tek tesis noktası (yalnızca pin görselleri).
  *
  *  - Boşta: görünürlüğü artıran nabız atan halka + çekirdek.
- *  - Hover (interactive && !active): çekirdek büyür, çevresinde "magic rings"
- *    (genişleyen halkalar) belirir, 3 sn geri sayım halkası dolarken altında
- *    sayı görünür. Süre dolunca onActivate çağrılır (videoyu açar).
- *  - İmleç ayrılırsa geri sayım iptal edilir.
+ *  - Hover (interactive && !active): çekirdek büyür + "magic rings" (targeting).
+ *    Geri sayım ve aktivasyon artık MapScreen'de (popup içinde gösterilir) —
+ *    burada yalnızca hover görseli + ebeveyne bildirim var.
  */
 export function LocationMarker({
   location,
@@ -34,76 +28,48 @@ export function LocationMarker({
   color,
   active,
   interactive,
-  countdownSeconds = 3,
-  onActivate,
   onHoverChange
 }: LocationMarkerProps): React.JSX.Element {
   const groupRef = useRef<SVGGElement>(null)
   const ctxRef = useRef<gsap.Context | null>(null)
   const [hovering, setHovering] = useState(false)
-  const [count, setCount] = useState(countdownSeconds)
 
-  const cancelDwell = (): void => {
+  const stopRings = (): void => {
     ctxRef.current?.revert()
     ctxRef.current = null
-    setCount(countdownSeconds)
   }
 
-  // İmleç bu marker'a girdi. onHoverChange her durumda tetiklenir (aktif marker
-  // da dahil) → ebeveyn "imleç konumda mı" bilgisini bu sinyalle izler. Marker
-  // zaten aktifse dwell/geri sayım BAŞLAMAZ; video sürekli oynatımda kalır.
   const handleEnter = (): void => {
     if (!interactive) return
-    onHoverChange?.(true)
+    onHoverChange?.(true, location)
     if (active) return
     setHovering(true)
-
     ctxRef.current = gsap.context(() => {
-      // Çekirdek büyür.
       gsap.to('.lm-core', { attr: { r: 7 }, duration: 0.3, ease: 'back.out(2)' })
-      // Magic rings — sürekli genişleyip sönen halkalar.
       gsap.fromTo(
         '.lm-ring',
         { attr: { r: 8 }, opacity: 0.65 },
         { attr: { r: 52 }, opacity: 0, duration: 1.7, ease: 'power1.out', repeat: -1, stagger: 0.45 }
       )
-      // Geri sayım halkası dolar.
-      gsap.fromTo(
-        '.lm-progress',
-        { attr: { 'stroke-dashoffset': PROGRESS_C } },
-        { attr: { 'stroke-dashoffset': 0 }, duration: countdownSeconds, ease: 'none' }
-      )
-      // Sayı (3→2→1) ve tamamlanınca aktive et.
-      const proxy = { v: countdownSeconds }
-      gsap.to(proxy, {
-        v: 0,
-        duration: countdownSeconds,
-        ease: 'none',
-        onUpdate: () => setCount(Math.max(1, Math.ceil(proxy.v))),
-        onComplete: () => onActivate(location)
-      })
     }, groupRef)
   }
 
-  // İmleç bu marker'dan ayrıldı. Aktif marker'da bu, ebeveynin deaktivasyonu
-  // (kısa grace ile) tetiklemesini sağlar; aktif değilse dwell geri sayımı iptal.
   const handleLeave = (): void => {
     if (!interactive) return
-    onHoverChange?.(false)
+    onHoverChange?.(false, location)
     setHovering(false)
-    cancelDwell()
+    stopRings()
   }
 
-  // Aktif olunca (başka yolla da seçilebilir) hover görsellerini temizle.
+  // Aktif olunca hover görsellerini temizle.
   useEffect(() => {
     if (active) {
       setHovering(false)
-      cancelDwell()
+      stopRings()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active])
 
-  useEffect(() => () => cancelDwell(), [])
+  useEffect(() => () => stopRings(), [])
 
   const showDwell = hovering && interactive && !active
 
@@ -124,44 +90,19 @@ export function LocationMarker({
         <circle className="eksim-halo" r={11} fill="none" stroke={color} strokeWidth={1.4} />
       )}
 
-      {/* Hover: magic rings + geri sayım halkası. */}
-      {showDwell && (
-        <>
-          {[0, 1, 2].map((i) => (
-            <circle
-              key={i}
-              className="lm-ring"
-              r={8}
-              fill="none"
-              stroke={color}
-              strokeWidth={1.6}
-              pointerEvents="none"
-            />
-          ))}
+      {/* Hover: targeting magic rings. */}
+      {showDwell &&
+        [0, 1, 2].map((i) => (
           <circle
-            className="lm-progress"
-            r={PROGRESS_R}
+            key={i}
+            className="lm-ring"
+            r={8}
             fill="none"
             stroke={color}
-            strokeWidth={3}
-            strokeLinecap="round"
-            strokeDasharray={PROGRESS_C}
-            strokeDashoffset={PROGRESS_C}
-            transform="rotate(-90)"
+            strokeWidth={1.6}
             pointerEvents="none"
           />
-          <text
-            y={PROGRESS_R + 18}
-            textAnchor="middle"
-            fontSize={18}
-            fontWeight={700}
-            fill="#ffffff"
-            pointerEvents="none"
-          >
-            {count}
-          </text>
-        </>
-      )}
+        ))}
 
       {/* Çekirdek. */}
       <circle

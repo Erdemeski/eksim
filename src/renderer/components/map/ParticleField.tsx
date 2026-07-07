@@ -2,10 +2,12 @@ import React, { useEffect, useRef } from 'react'
 
 interface ParticleFieldProps {
   className?: string
+  /** Bir tesis aktifken (video ön planda) döngüyü duraklat — GPU'yu videoya bırak. */
+  paused?: boolean
 }
 
 const COLORS = ['#2EA6FF', '#34D399', '#7DD3FC']
-const LINK_DIST = 110
+const LINK_DIST = 100
 /** Arka plan efekti için kare sınırı — yavaş parçacıklarda fark edilmez, CPU ~½. */
 const FPS_CAP = 30
 
@@ -23,8 +25,11 @@ interface Particle {
  * yok; ebeveyn boyutuna ResizeObserver ile uyar, devicePixelRatio'ya duyarlı.
  * Yakın parçacıklar ince çizgilerle bağlanır (takımyıldız etkisi).
  */
-export function ParticleField({ className }: ParticleFieldProps): React.JSX.Element {
+export function ParticleField({ className, paused = false }: ParticleFieldProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const pausedRef = useRef(paused)
+  /** Dışarıdan (paused değişince) döngüyü yeniden değerlendirmek için köprü. */
+  const syncRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -50,7 +55,7 @@ export function ParticleField({ className }: ParticleFieldProps): React.JSX.Elem
       canvas.style.width = `${w}px`
       canvas.style.height = `${h}px`
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      const count = Math.round(Math.min(60, (w * h) / 16000))
+      const count = Math.round(Math.min(48, (w * h) / 18000))
       particles = Array.from({ length: count }, () => ({
         x: Math.random() * w,
         y: Math.random() * h,
@@ -118,25 +123,36 @@ export function ParticleField({ className }: ParticleFieldProps): React.JSX.Elem
       cancelAnimationFrame(raf)
     }
 
-    // Pencere/sekme gizliyken (diğer monitör önde vb.) döngüyü tamamen durdur.
-    const onVisibility = (): void => {
-      if (document.hidden) stop()
-      else start()
+    // Döngü yalnızca görünür + duraklatılmamış + hareket açıkken çalışsın.
+    // (paused: bir tesis aktif; hidden: pencere arkada.)
+    const sync = (): void => {
+      if (!document.hidden && !pausedRef.current) start()
+      else stop()
     }
+    syncRef.current = sync
+
+    const onVisibility = (): void => sync()
 
     const ro = new ResizeObserver(resize)
     ro.observe(parent)
     resize()
     if (reduce) step()
-    else start()
+    else sync()
     document.addEventListener('visibilitychange', onVisibility)
 
     return () => {
       stop()
       ro.disconnect()
       document.removeEventListener('visibilitychange', onVisibility)
+      syncRef.current = () => {}
     }
   }, [])
+
+  // paused değişince döngüyü senkronize et (particles yeniden oluşturulmaz).
+  useEffect(() => {
+    pausedRef.current = paused
+    syncRef.current()
+  }, [paused])
 
   return <canvas ref={canvasRef} className={className} />
 }

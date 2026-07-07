@@ -21,52 +21,60 @@ body,
   cursor: none;
 }
 
-/* ---- Aurora arkaplan (reactbits "Aurora/Particles" ruhunda, WebGL'siz) ---- */
+/* ---- Aurora arkaplan (reactbits "Aurora/Particles" ruhunda, WebGL'siz) ----
+ *
+ * PERF (Windows kritik): Eskiden her aurora `mix-blend-mode: screen` +
+ * `filter: blur(80px)` + animasyonlu `scale` ile çiziliyordu — bu kombinasyon
+ * ANGLE/D3D yolunda kare başına blend+blur yeniden-rasterize gerektirir ve
+ * GPU'yu doyurur (fan). radial-gradient zaten şeffafa solduğu için blur büyük
+ * ölçüde gereksiz; parlak yarı-saydam gradyanın koyu zemin üzerinde normal
+ * kompoziti "screen" görünümünü yakından taklit eder. scale kaldırıldı,
+ * yalnızca translate drift bırakıldı (ucuz, saf composite). Renk/opaklık glow
+ * hissini korumak için hafif artırıldı. */
 .eksim-aurora {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
-  mix-blend-mode: screen;
-  opacity: 0.55;
+  opacity: 0.7;
   will-change: transform;
 }
 .eksim-aurora--energy {
-  width: 55%;
-  height: 55%;
+  width: 58%;
+  height: 58%;
   left: -8%;
-  top: 8%;
-  background: radial-gradient(circle at center, #2ea6ff 0%, rgba(46, 166, 255, 0) 70%);
+  top: 6%;
+  background: radial-gradient(circle at center, rgba(46, 166, 255, 0.85) 0%, rgba(46, 166, 255, 0) 68%);
   animation: eksim-drift-a 22s ease-in-out infinite;
 }
 .eksim-aurora--food {
-  width: 50%;
-  height: 50%;
+  width: 52%;
+  height: 52%;
   right: -6%;
-  bottom: 2%;
-  background: radial-gradient(circle at center, #34d399 0%, rgba(52, 211, 153, 0) 70%);
+  bottom: 0%;
+  background: radial-gradient(circle at center, rgba(52, 211, 153, 0.8) 0%, rgba(52, 211, 153, 0) 68%);
   animation: eksim-drift-b 26s ease-in-out infinite;
 }
 .eksim-aurora--glow {
-  width: 45%;
-  height: 45%;
-  left: 35%;
-  top: 30%;
-  background: radial-gradient(circle at center, #7dd3fc 0%, rgba(125, 211, 252, 0) 70%);
-  opacity: 0.35;
+  width: 48%;
+  height: 48%;
+  left: 34%;
+  top: 28%;
+  opacity: 0.5;
+  background: radial-gradient(circle at center, rgba(125, 211, 252, 0.7) 0%, rgba(125, 211, 252, 0) 68%);
   animation: eksim-drift-c 30s ease-in-out infinite;
 }
 
+/* Yalnızca translate drift (scale yok → katman yeniden-rasterize edilmez). */
 @keyframes eksim-drift-a {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(8%, 6%, 0) scale(1.18); }
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(7%, 5%, 0); }
 }
 @keyframes eksim-drift-b {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
-  50% { transform: translate3d(-7%, -5%, 0) scale(0.9); }
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-6%, -4%, 0); }
 }
 @keyframes eksim-drift-c {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(0.95); }
-  50% { transform: translate3d(5%, -8%, 0) scale(1.15); }
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(5%, -6%, 0); }
 }
 
 /* Nokta ızgarası (derinlik hissi). */
@@ -89,4 +97,49 @@ body,
 @keyframes eksim-halo-pulse {
   0%, 100% { transform: scale(1); opacity: 0.28; }
   50% { transform: scale(1.35); opacity: 0.08; }
+}
+
+/* ---- Harita amblem/şebeke animasyonları — CSS-NATİF (compositor-only) ----
+ *
+ * PERF: 17 pinde 14'e varan rüzgar türbini + EnergyGrid'in ~16 çizgisi/8 şehir
+ * ışığı önceden GSAP (JS ana iş parçacığında, her karede) döndürülüyor/
+ * titretiliyordu. Bunlar salt `transform`/`opacity` — tarayıcı bu ikisini
+ * compositor thread'inde (GPU, JS'siz) çalıştırabilir. CSS keyframe'e taşımak
+ * ana iş parçacığı yükünü kaldırır, GÖRÜNÜM birebir aynı kalır. Bu da video
+ * penceresiyle paylaşılan GPU sürecindeki rekabeti azaltır (bkz. main/index.ts,
+ * TurkeyMap.tsx'teki önceki performans notları).
+ */
+.emb-blades {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: eksim-blade-spin 7s linear infinite;
+}
+@keyframes eksim-blade-spin {
+  to { transform: rotate(360deg); }
+}
+
+.emb-leaf {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: eksim-leaf-sway 2.6s ease-in-out infinite alternate;
+}
+@keyframes eksim-leaf-sway {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(6deg); }
+}
+
+.eg-base {
+  animation: eksim-eg-pulse 2.8s ease-in-out infinite alternate;
+}
+@keyframes eksim-eg-pulse {
+  from { opacity: 0.25; }
+  to { opacity: 0.45; }
+}
+
+.eg-city {
+  animation: eksim-eg-twinkle 1.8s ease-in-out infinite alternate;
+}
+@keyframes eksim-eg-twinkle {
+  from { opacity: 0.45; }
+  to { opacity: 0.9; }
 }

@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { IntroScreen } from '../intro/IntroScreen'
 import { ipcService } from '../../services/ipcService'
 import { useKioskStore } from '../../store/useKioskStore'
 import { LocalMp4Source, type ResolvedVideo } from '../../video/IVideoSource'
+import { BrandLogo } from '../brand/BrandLogo'
 import type { EksimLocation } from '@shared/types'
 
 const SECTOR_LABEL: Record<EksimLocation['sector'], string> = {
@@ -14,6 +15,59 @@ const SECTOR_ACCENT: Record<EksimLocation['sector'], string> = {
   energy: 'text-eksim-energy',
   food: 'text-eksim-food'
 }
+
+/**
+ * Tek video katmanı — framer-motion reveal geçişi (clipPath + opacity + scale)
+ * AYNEN korunur (premium his). Geçiş TAMAMLANINCA kabın clip-path/transform/
+ * will-change artıkları temizlenir → sürekli oynatımda (senaryonun ~%99'u) video,
+ * donanım video overlay'i olarak temiz kompozit edilir (Windows DirectComposition
+ * zero-copy yolu); GPU/CPU boşalır, fan susar. React.memo + kararlı prop'lar:
+ * aynı kaynakta yeniden render'da framer'ın stili geri yazmasını önler.
+ */
+const VideoLayer = React.memo(
+  function VideoLayer({
+    resolved,
+    onError
+  }: {
+    resolved: ResolvedVideo
+    onError: () => void
+  }): React.JSX.Element {
+    const ref = useRef<HTMLDivElement>(null)
+    return (
+      <motion.div
+        ref={ref}
+        className="absolute inset-0"
+        initial={{ clipPath: 'inset(100% 0% 0% 0%)', opacity: 0.4, scale: 1.05 }}
+        animate={{ clipPath: 'inset(0% 0% 0% 0%)', opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 1.02 }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+        onAnimationComplete={(definition) => {
+          // Yalnızca reveal (giriş, opacity=1) bitince temizle; exit'te node gider.
+          if ((definition as { opacity?: number })?.opacity !== 1) return
+          const el = ref.current
+          if (!el) return
+          el.style.clipPath = 'none'
+          el.style.transform = 'none'
+          el.style.willChange = 'auto'
+        }}
+      >
+        <video
+          className="h-full w-full object-cover"
+          src={resolved.src}
+          autoPlay
+          muted
+          loop={resolved.loop}
+          playsInline
+          preload="auto"
+          disablePictureInPicture
+          disableRemotePlayback
+          onError={onError}
+        />
+      </motion.div>
+    )
+  },
+  (a, b) => a.resolved.src === b.resolved.src && a.onError === b.onError
+)
 
 /**
  * Monitör 2 — dikey video ekranı.
@@ -49,12 +103,17 @@ export function VideoScreen(): React.JSX.Element {
     }
   }, [setActiveLocation])
 
-  const resolved: ResolvedVideo = failed ? source.resolveFallback() : source.resolve(activeLocation)
+  // useMemo: kaynak değişmedikçe referans sabit kalsın (VideoLayer boş yere
+  // yeniden render olmasın → framer'ın overlay temizliğini bozmasın).
+  const resolved: ResolvedVideo = useMemo(
+    () => (failed ? source.resolveFallback() : source.resolve(activeLocation)),
+    [failed, activeLocation, source]
+  )
 
-  const handleError = (): void => {
+  const handleError = useCallback((): void => {
     // Lokal/çevrimiçi kaynak yüklenemediyse fallback'e düş (zincir bir kez).
     if (resolved.kind !== 'fallback') setFailed(true)
-  }
+  }, [resolved.kind])
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-eksim-ink">
@@ -69,38 +128,24 @@ export function VideoScreen(): React.JSX.Element {
         />
       </div>
 
-      <AnimatePresence mode="popLayout">
-        <motion.div
-          key={resolved.src}
-          className="absolute inset-0"
-          // NOT: Tam ekran video üzerinde animasyonlu filter: blur(...) çok pahalı
-          // (her kare yeniden rasterize). Reveal hissi clipPath + opacity + hafif
-          // scale ile korunur; bunlar GPU-composite edilir, blur'suz akıcıdır.
-          initial={{ clipPath: 'inset(100% 0% 0% 0%)', opacity: 0.4, scale: 1.05 }}
-          animate={{ clipPath: 'inset(0% 0% 0% 0%)', opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 1.02 }}
-          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <video
-            className="h-full w-full object-cover"
-            src={resolved.src}
-            autoPlay
-            muted
-            loop={resolved.loop}
-            playsInline
-            preload="auto"
-            disablePictureInPicture
-            disableRemotePlayback
-            onError={handleError}
-          />
-        </motion.div>
+      <AnimatePresence>
+        <VideoLayer key={resolved.src} resolved={resolved} onError={handleError} />
       </AnimatePresence>
 
-      {/* Alt degrade — metin okunabilirliği için. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/85 to-transparent" />
+      <BrandLogo />
 
-      {/* Tesis bilgisi overlay'i (Framer Motion ile girer/çıkar). */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 p-10">
+      {/* Güçlü scrim — parlak videolarda bile metin okunur. Alt band + sağ-alt
+          köşede ekstra karartma (metin oraya yaslı). */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.5) 20%, transparent 46%), radial-gradient(95% 65% at 100% 100%, rgba(0,0,0,0.6), transparent 60%)'
+        }}
+      />
+
+      {/* Tesis bilgisi overlay'i — sağ-alta hizalı (Framer Motion ile girer/çıkar). */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-end p-10 md:p-14">
         <AnimatePresence mode="wait">
           {activeLocation ? (
             <motion.div
@@ -109,6 +154,7 @@ export function VideoScreen(): React.JSX.Element {
               animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
               exit={{ opacity: 0, y: 18, filter: 'blur(8px)' }}
               transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+              className="ml-auto max-w-xl text-right [text-shadow:0_2px_16px_rgba(0,0,0,0.85)]"
             >
               <p
                 className={`text-sm font-semibold uppercase tracking-[0.4em] ${SECTOR_ACCENT[activeLocation.sector]}`}
@@ -118,7 +164,9 @@ export function VideoScreen(): React.JSX.Element {
               <h1 className="mt-2 text-4xl font-semibold leading-tight text-white">
                 {activeLocation.name}
               </h1>
-              <p className="mt-3 max-w-xl text-lg text-white/70">{activeLocation.description}</p>
+              <p className="mt-3 text-lg leading-relaxed text-white/90">
+                {activeLocation.description}
+              </p>
             </motion.div>
           ) : (
             <motion.div
@@ -127,11 +175,12 @@ export function VideoScreen(): React.JSX.Element {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.6 }}
+              className="ml-auto max-w-xl text-right [text-shadow:0_2px_16px_rgba(0,0,0,0.85)]"
             >
-              <p className="text-sm font-semibold uppercase tracking-[0.5em] text-eksim-glow/70">
+              <p className="text-sm font-semibold uppercase tracking-[0.5em] text-eksim-glow/80">
                 Eksim Holding
               </p>
-              <h1 className="mt-2 text-3xl font-semibold text-white/90">
+              <h1 className="mt-2 text-3xl font-semibold text-white">
                 Enerji ve Gıdada Geleceği İnşa Ediyoruz
               </h1>
             </motion.div>

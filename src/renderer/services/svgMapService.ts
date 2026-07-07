@@ -71,6 +71,18 @@ export function screenToViewBox(
 }
 
 /**
+ * viewBox koordinatını ekran (client) pikseline çevirir — `screenToViewBox`'ın
+ * tersi. HTML overlay öğelerini (popup vb.) tam pin üstüne konumlamak için;
+ * getScreenCTM slice/ölçek/konumu içerir → her çözünürlükte doğru.
+ */
+export function viewBoxToScreen(svg: SVGSVGElement, point: Point): Point | null {
+  const ctm = svg.getScreenCTM()
+  if (!ctm) return null
+  const screen = new DOMPoint(point.x, point.y).matrixTransform(ctm)
+  return { x: screen.x, y: screen.y }
+}
+
+/**
  * viewBox noktasına en yakın tesisi döndürür (maxDistance viewBox birimi
  * içinde). Yarıçap dışında eşleşme yoksa null.
  */

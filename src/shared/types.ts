@@ -33,6 +33,39 @@ export interface EksimLocation {
   videoId?: string
   /** Lokal video yoksa kullanılacak çevrimiçi video URL'i. Opsiyonel. */
   videoUrl?: string
+  /**
+   * Sahadaki santral türleri — popup ikonu ve pin amblemi bu listeden çizilir.
+   * Birden fazla olabilir (ör. RES+GES hibrit saha); ilki birincil/accent renk
+   * ve ana ikon olarak kullanılır.
+   */
+  kinds: FacilityKind[]
+  /** Toplam (mevcut + planlanan) kurulu güç (MW). */
+  totalMw: number
+  /** Türe göre MEVCUT kurulu güç kırılımı (verilmişse; popup'ta rozet olarak gösterilir). */
+  capacities?: FacilityCapacity[]
+  /** İşlemde olan ilave kapasite artışı projesi (MW) — varsa. */
+  additionalMw?: number
+  /**
+   * Haritada üst üste binen yakın sahalar tek pinde birleştirildiğinde, o
+   * pinin kapsadığı gerçek projelerin adı+gücü (popup'ta isim bazlı rozet
+   * olarak gösterilir). Tek-projeli pinlerde verilmez.
+   */
+  subprojects?: FacilitySubproject[]
+}
+
+/** Tesis görsel tipi (amblem + ikon seçimi için). */
+export type FacilityKind = 'wind' | 'solar' | 'hydro' | 'food'
+
+/** Bir santral türünün kurulu gücü (MW). */
+export interface FacilityCapacity {
+  kind: FacilityKind
+  mw: number
+}
+
+/** Birleştirilmiş bir pinin kapsadığı tek bir gerçek projenin adı + gücü. */
+export interface FacilitySubproject {
+  name: string
+  mw: number
 }
 
 /** Figür algılama modu. */
