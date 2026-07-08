@@ -99,9 +99,9 @@ export function VideoScreen(): React.JSX.Element {
     // Aynı kaynak zaten önde → hiçbir şey yapma (fallback aynı kaldığında takılma yok).
     if (slotSrc.current[front] === target) return
 
-    // İlk atama: ön slotu (slot 0) doğrudan hazırla. Görünürlük `initial` ile
-    // sağlanır (slot 0 zaten OPEN başlar) → controls.set flush zamanlamasına
-    // bağlı DEĞİL; sadece kaynağı yükle ve oynat.
+    // İlk atama: ön slotu (slot 0) doğrudan hazırla. Slot 0 `initial={OPEN}`
+    // ile başladığından kaynak atanır atanmaz görünür olur — controls.set'in
+    // async flush zamanlamasına bağlı DEĞİL. frontRef zaten 0.
     if (slotSrc.current[0] === '' && slotSrc.current[1] === '') {
       const v = getVideo(0)
       if (!v) return
@@ -109,6 +109,8 @@ export function VideoScreen(): React.JSX.Element {
       slotSrc.current[0] = target
       v.load()
       void v.play().catch(() => {})
+      // Slot 1'i gizli tut (initial opacity:0 yeterli, ama açıkça belirtelim).
+      controls1.set({ opacity: 0, zIndex: 1 })
       return
     }
 
@@ -121,7 +123,6 @@ export function VideoScreen(): React.JSX.Element {
       if (token !== tokenRef.current) return
       const bc = getControls(back)
       const fc = getControls(front)
-      const backLayer = backVideo.parentElement as HTMLElement | null
       const frontVideo = getVideo(front)
 
       // Gelen slot kapalı ve ÜSTTE; eski slot altta görünür kalır (üzerine wipe).
@@ -141,12 +142,11 @@ export function VideoScreen(): React.JSX.Element {
       frontRef.current = back
       if (frontVideo) frontVideo.pause()
       fc.set({ opacity: 0, zIndex: 1 })
-      // Donanım overlay temizliği: sürekli oynatımda clip/transform artığı kalmasın.
-      if (backLayer) {
-        backLayer.style.clipPath = 'none'
-        backLayer.style.transform = 'none'
-        backLayer.style.willChange = 'auto'
-      }
+      // Donanım overlay temizliği: Framer'ın kendi set() kullanılır — inline
+      // style yazmak Framer Motion'ın iç durumunu bozar ve sonraki animate
+      // çağrılarını kırar. clipPath'i 'none' yaparak GPU compositing
+      // katmanını serbest bırakıyoruz (artık wipe efekti yok).
+      bc.set({ clipPath: 'none', scale: 1, opacity: 1, zIndex: 2 })
     }
 
     // Arka slotta hedef zaten yüklüyse (ör. remote→fallback dönüşü) tekrar yükleme.
@@ -191,9 +191,12 @@ export function VideoScreen(): React.JSX.Element {
       </div>
 
       {/* Kalıcı iki video slotu (crossfade havuzu). src imperatif atanır. */}
+      {/* Slot 0: ilk video — OPEN ile başlar (opacity:1, clip temiz). İlk atama
+          anında kaynak yüklenir yüklenmez görünür olur; controls.set flush
+          zamanlamasına bağımlılık yok. */}
       <motion.div
         className="absolute inset-0"
-        initial={{ opacity: 0, clipPath: 'inset(100% 0% 0% 0%)' }}
+        initial={OPEN}
         animate={controls0}
         style={{ zIndex: 1 }}
       >
