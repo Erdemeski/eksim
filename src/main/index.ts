@@ -44,6 +44,13 @@ function configureChromiumForKiosk(): void {
   app.commandLine.appendSwitch('disable-renderer-backgrounding')
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 
+  // A2) Windows'a özgü: yerel pencere-örtülme takibi, odaksız ikinci monitör
+  // penceresini "örtülü" sayıp render'ını kısabiliyor (çift monitör kioskta
+  // bilinen takılma kaynağı). Takibi tamamen kapat → her iki pencere de daima
+  // görünür kabul edilir. NOT: `disable-features` TEK çağrı olmalı (enable-features
+  // gibi, tekrarlanan çağrılar birbirini ezer).
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
+
   // B) Yalnızca güvenli, blocklist'i etkilemeyen kompozisyon ipuçları.
   app.commandLine.appendSwitch('enable-gpu-rasterization')
   app.commandLine.appendSwitch('enable-zero-copy')

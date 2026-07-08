@@ -1,5 +1,4 @@
-import React, { useEffect, useRef } from 'react'
-import gsap from 'gsap'
+import React from 'react'
 import type { EksimLocation, Point } from '@shared/types'
 import { locationToViewBox } from '../../services/svgMapService'
 
@@ -76,27 +75,18 @@ function buildSpanningEdges(points: Point[]): Array<[number, number]> {
  * Tesisler arasında akan, parlayan enerji ağı + gece şehir ışıkları.
  * Canlı/modern doku katmanı (reactbits/şebeke hissi).
  *
- * PERF: taban çizgisi nabzı (`.eg-base`) ve şehir ışığı titremesi (`.eg-city`)
- * artık GSAP DEĞİL, CSS `@keyframes` ile çalışır (bkz. index.css) — ikisi de
- * salt opacity, tarayıcı compositor thread'inde JS'siz çalıştırır. 17 pinde
- * ~16 çizgi + 8 ışık için bu, ana iş parçacığı yükünü belirgin azaltır; görünüm
- * birebir aynı. Stagger, CSS `animationDelay` ile (aşağıda, render'da) verilir.
- * Akan çizgi (`.eg-flow`, strokeDashoffset) CSS-uyumlu olmadığından GSAP'te kaldı.
+ * PERF: bileşende artık HİÇ JS animasyonu yok. Taban nabzı (`.eg-base`),
+ * şehir ışığı titremesi (`.eg-city`) ve akan çizgi (`.eg-flow`,
+ * stroke-dashoffset — Chromium'da CSS-animatable) tamamı CSS `@keyframes`
+ * ile çalışır (bkz. index.css): ana iş parçacığına dokunmaz, görünüm birebir
+ * aynı. Stagger, CSS `animationDelay` ile (aşağıda, render'da) verilir.
  */
 export function EnergyGrid({ locations }: EnergyGridProps): React.JSX.Element {
-  const ref = useRef<SVGGElement>(null)
   const points = locations.map(locationToViewBox)
   const arcs = buildSpanningEdges(points).map(([i, j]) => arcPath(points[i], points[j]))
 
-  useEffect(() => {
-    const ctx = gsap.context(() => {
-      gsap.to('.eg-flow', { strokeDashoffset: -40, duration: 2.4, ease: 'none', repeat: -1 })
-    }, ref)
-    return () => ctx.revert()
-  }, [arcs.length])
-
   return (
-    <g ref={ref} pointerEvents="none">
+    <g pointerEvents="none">
       <defs>
         <filter id="eg-glow" x="-40%" y="-40%" width="180%" height="180%">
           <feGaussianBlur stdDeviation="1.1" result="b" />

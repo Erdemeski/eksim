@@ -143,3 +143,41 @@ body,
   from { opacity: 0.45; }
   to { opacity: 0.9; }
 }
+
+/* Enerji ağı akan çizgisi — stroke-dashoffset Chromium'da CSS-animatable;
+   GSAP'ten buraya taşındı → EnergyGrid tamamen JS'siz. dasharray "3 37"
+   (toplam 40) olduğundan -40'a kayma kusursuz döngü verir. */
+.eg-flow {
+  animation: eksim-eg-flow 2.4s linear infinite;
+}
+@keyframes eksim-eg-flow {
+  to { stroke-dashoffset: -40; }
+}
+
+/* Türkiye sınırı neon bulutunun çok yavaş nefesi. Grup opacity'si compositor'da
+   uygulanır; filtreli path'lerin raster'ı STATİK kalır (yeniden hesaplanmaz).
+   Kasıtlı olarak belirsiz/yavaş — göz yormaz, ambiyans verir. */
+.eksim-neon-border {
+  animation: eksim-neon-breathe 10s ease-in-out infinite alternate;
+}
+@keyframes eksim-neon-breathe {
+  from { opacity: 0.75; }
+  to { opacity: 1; }
+}
+
+/* LightRays artık gerçek WebGL (ogl) ile render ediliyor — bkz. LightRays.tsx.
+   CSS-only deneme buradan kaldırıldı. */
+
+@media (prefers-reduced-motion: reduce) {
+  .eksim-neon-border,
+  .eg-flow,
+  .eg-base,
+  .eg-city,
+  .emb-blades,
+  .emb-leaf,
+  .eksim-halo,
+  .eksim-aurora,
+  .eksim-light-rays__beam {
+    animation: none;
+  }
+}

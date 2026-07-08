@@ -21,6 +21,7 @@
   "dependencies": {
     "framer-motion": "^11.18.2",
     "gsap": "^3.13.0",
+    "ogl": "^1.0.11",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^5.0.3"

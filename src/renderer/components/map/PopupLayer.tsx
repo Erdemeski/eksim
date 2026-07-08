@@ -24,8 +24,9 @@ interface PopupLayerProps {
 
 /** Idle önizleme döngüsünde her pinin gösterim süresi (ms). */
 const CYCLE_MS = 10000
-/** Kartın yatay yarı-genişlik payı (ekran kenarına yaslanmayı önler). */
-const X_PAD = 150
+/** Kartın yatay yarı-genişlik payı (ekran kenarına yaslanmayı önler) —
+    aktif cam kart ~368px genişliğinde → yarısı + kenar payı. */
+const X_PAD = 190
 
 interface Resolved {
   location: EksimLocation

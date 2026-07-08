@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { TurkeyMap } from './TurkeyMap'
 import { MapBackground } from './MapBackground'
+import { LightRays } from './LightRays'
 import { EnergyGrid } from './EnergyGrid'
 import { LocationMarker } from './LocationMarker'
 import { LocationPinEmblem } from './LocationPinEmblem'
@@ -217,6 +218,31 @@ export function MapScreen(): React.JSX.Element {
           )}
         </TurkeyMap>
       </div>
+
+      {/* Üstten yayılan ışık hüzmeleri (gerçek WebGL/ogl, bkz. LightRays.tsx).
+          z-15: harita katmanının (z-10) ÜSTÜNDE, idle panel/popup'ın (z-20/30)
+          ALTINDA — pointer-events-none, etkileşimi etkilemez. Işıma pin aktifken
+          de SÜRER (kullanıcı isteği); yalnızca pencere gizliyken durur (bileşen
+          içindeki `document.hidden` koruması). */}
+      {!intro && (
+        <div className="pointer-events-none absolute inset-0 z-[15]">
+          <LightRays
+            raysOrigin="top-center"
+            raysColor="#ffffff"
+            raysSpeed={0.3}
+            lightSpread={0.5}
+            rayLength={1}
+            fadeDistance={1}
+            saturation={1}
+            pulsating
+            followMouse
+            mouseInfluence={0.08}
+            noiseAmount={0}
+            distortion={0}
+            paused={false}
+          />
+        </div>
+      )}
 
       {/* Pin popup katmanı (idle tanıtım + geri sayım + aktif detay). */}
       <PopupLayer

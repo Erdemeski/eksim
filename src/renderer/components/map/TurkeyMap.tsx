@@ -1,5 +1,4 @@
-import React, { useEffect, useRef } from 'react'
-import gsap from 'gsap'
+import React from 'react'
 import { TURKEY_PATH_D, MAP_VIEWBOX, MAP_RECT } from './turkeyGeometry'
 import satelliteUrl from '../../assets/turkey-satellite.jpg'
 
@@ -11,38 +10,22 @@ interface TurkeyMapProps {
 }
 
 /**
- * Türkiye haritası — gerçek uydu görüntülü, canlı katmanlar.
+ * Türkiye haritası — gerçek uydu görüntülü, sakin premium katmanlar.
  *
  * Görsel: NASA Blue Marble (Web Mercator, viewBox ile hizalı). turkey.svg
- * silüeti hem parlak Türkiye'yi kırpan maske (clip) hem de mevcut SİYASİ dış
- * hattı korur. Türkiye dışı coğrafya, kenarlara doğru uzaya solan HAFİF BEYAZ
- * bir sisle örtülü uydu silüeti olur (bkz. `tr-dark` filtresi). Kıyı, GSAP ile
- * akan/parlayan canlı bir enerji hattıdır; kara hafifçe "nefes alır" (yavaş
- * drift). Sabit değil — modern ve canlı.
+ * silüeti hem Türkiye'yi kırpan maske (clip) hem de SİYASİ dış hattı korur.
+ * Türkiye dışı coğrafya koyu lacivert silüete çekilir (`tr-dark`); Türkiye içi
+ * uydu dokusu ink tonuyla soluklaştırılır ki pinler/amblemler öne çıksın.
+ * Sınır, STATİK beyaz neon bulut parlamasıdır (`tr-neon`).
+ *
+ * PERF (kritik): Bu bileşende artık HİÇ JS animasyonu yok. Eski
+ * `.tr-coast-flow` dash akımı, neredeyse tüm viewport'u kaplayan Türkiye
+ * path'inin bbox'ını HER KARE yeniden boyatıyordu — haritadaki en büyük tekil
+ * repaint kaynağıydı ve video penceresini aç bırakıyordu. Neon katmanlar
+ * statik olduğundan blur filtresi BİR KEZ rasterize edilip cache'lenir;
+ * canlılık, compositor-only CSS opacity nefesiyle (`eksim-neon-breathe`) verilir.
  */
 export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Element {
-  const rootRef = useRef<SVGGElement>(null)
-
-  useEffect(() => {
-    const ctx = gsap.context(() => {
-      // NOT: Uydu görseli STATİK — siyasi sınırla birebir hizalı kalsın diye
-      // ölçekleme/drift yok. Canlılık kıyı akışı, enerji ağı, şehir ışıkları ve
-      // parçacıklardan gelir.
-      // Kıyı boyunca akan enerji ışığı.
-      gsap.fromTo(
-        '.tr-coast-flow',
-        { strokeDashoffset: 0 },
-        { strokeDashoffset: -180, duration: 5, ease: 'none', repeat: -1 }
-      )
-      // Kıyı parlamasının yumuşak nabzı. NOT: aralık DÜŞÜK/transparan tutulur
-      // (bkz. JSX'teki opacity="0.18") — bu statik mavi hat, rüzgar amblemleriyle
-      // aynı mavi tonda olduğu için baskın olursa kafa karıştırıyordu. Akan
-      // beyaz akım (.tr-coast-flow) asıl "elektrik" sinyali olarak öne çıkar.
-      gsap.to('.tr-coast', { opacity: 0.32, duration: 2.6, ease: 'sine.inOut', repeat: -1, yoyo: true })
-    }, rootRef)
-    return () => ctx.revert()
-  }, [])
-
   return (
     <svg
       ref={svgRef}
@@ -54,24 +37,26 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
         <clipPath id="tr-clip">
           <path d={TURKEY_PATH_D} />
         </clipPath>
-        {/* Türkiye dışını desatüre edip HAFİF BEYAZ bir sise çeken matris.
-            Eşit R/G/B ağırlığı (renk sapması yok, laciverte kaymaz) + ölçülü
-            pozitif ofset (+0.3) ile görüntü hafifçe beyaza doğru kaydırılır —
-            Türkiye'nin kendisi hâlâ en parlak/doygun alan olarak öne çıkar. */}
+        {/* Türkiye dışını belirgin karartıp hafif lacivere çeken matris —
+            Türkiye'nin kendisi en parlak/doygun alan olarak öne çıkar. */}
         <filter id="tr-dark" x="0" y="0" width="100%" height="100%">
           <feColorMatrix
             type="matrix"
             values="0.16 0 0 0 0  0 0.18 0 0 0  0 0 0.27 0 0.012  0 0 0 1 0"
           />
         </filter>
-        <filter id="tr-coast-glow" x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur stdDeviation="1.6" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
+        {/* Neon bulut: geniş blur — STATİK path'lerde kullanılır, raster
+            bir kez hesaplanıp cache'lenir (animasyonlu öğede olsaydı her kare
+            yeniden rasterize olurdu — bilinen takılma deseni). */}
+        <filter id="tr-neon" x="-15%" y="-25%" width="130%" height="150%">
+          <feGaussianBlur stdDeviation="4" />
         </filter>
+        {/* Sınır boyunca sade beyaz parlama (nötr, saf ışık hissi). */}
+        <linearGradient id="tr-neon-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="55%" stopColor="#f8fbff" />
+          <stop offset="100%" stopColor="#ffffff" />
+        </linearGradient>
         {/* Kenarlara doğru uzaya solma (köşelerde arka plan/parçacıklar görünür). */}
         <radialGradient id="tr-fade" cx="50%" cy="50%" r="75%">
           <stop offset="0%" stopColor="#ffffff" />
@@ -89,7 +74,7 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
         </mask>
       </defs>
 
-      <g ref={rootRef}>
+      <g>
         {/* 1) Türkiye dışı: koyu uydu silüeti, kenarda uzaya solar. */}
         <g mask="url(#tr-outside-mask)">
           <image
@@ -103,7 +88,7 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
           />
         </g>
 
-        {/* 1b) Dış bölgeyi daha da sisleyen ÇOK hafif beyaz perde. */}
+        {/* 1b) Dış bölgeyi daha da derinleştiren karartma perdesi. */}
         <rect
           x={MAP_RECT.x}
           y={MAP_RECT.y}
@@ -113,7 +98,9 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
           opacity="0.38"
         />
 
-        {/* 2) Türkiye: parlak uydu, silüete kırpılı (STATİK — sınırla birebir hizalı). */}
+        {/* 2) Türkiye: uydu görseli, silüete kırpılı (STATİK — sınırla birebir
+            hizalı). Üstteki ink overlay arazi dokusunu geri çeker → pinler,
+            amblemler ve enerji ağı önde okunur (statik rect = sıfır ek maliyet). */}
         <g clipPath="url(#tr-clip)">
           <image
             href={satelliteUrl}
@@ -123,38 +110,42 @@ export function TurkeyMap({ svgRef, children }: TurkeyMapProps): React.JSX.Eleme
             height={MAP_RECT.height}
             preserveAspectRatio="none"
           />
+          <rect
+            x={MAP_RECT.x}
+            y={MAP_RECT.y}
+            width={MAP_RECT.width}
+            height={MAP_RECT.height}
+            fill="#0A1020"
+            opacity="0.25"
+          />
           {/* İç kenar gölgesi → kıyıda derinlik. */}
           <path d={TURKEY_PATH_D} fill="none" stroke="#02080f" strokeWidth="5" opacity="0.55" />
         </g>
 
-        {/* 3) Kıyı hattı + akan enerji akımı.
-            NOT: `.tr-coast` (sabit mavi hat) BİLEREK çok transparan tutulur —
-            rüzgar türbini amblemleri de mavi olduğu için baskın bir mavi kıyı
-            çizgisi ikisini ayırt edilmez kılıyordu. Kıyı artık yalnızca ince
-            bir ambiyans; asıl "elektrik akımı" sinyali akan BEYAZ çizgidir. */}
-        <path
-          className="tr-coast"
-          d={TURKEY_PATH_D}
-          fill="none"
-          stroke="#5fd0ff"
-          strokeWidth="0.9"
-          filter="url(#tr-coast-glow)"
-          opacity="0.18"
-        />
-        <path d={TURKEY_PATH_D} fill="none" stroke="#d8f6ff" strokeWidth="0.3" opacity="0.5" />
-        {/* PERF: Bu çizgi strokeDashoffset ile sürekli animasyonlu. SVG glow
-            filtresi (feGaussianBlur) animasyonlu öğede her kare yeniden
-            rasterize edilir → pahalı. Glow zaten üstteki STATİK `.tr-coast`
-            katmanında var; akan çizgi filtresiz de aynı görünür. */}
-        <path
-          className="tr-coast-flow"
-          d={TURKEY_PATH_D}
-          fill="none"
-          stroke="#ffffff"
-          strokeWidth="0.85"
-          strokeLinecap="round"
-          strokeDasharray="6 170"
-        />
+        {/* 3) Sınır: statik beyaz neon bulut parlaması. Dönen akım yerine
+            sakin, göz yormayan bir hale — geniş yumuşak taban + dar parlak öz +
+            tanım için soluk hairline. Canlılık `eksim-neon-breathe` (CSS,
+            compositor-only, ~10s) ile; filtre rasteri statik kaldığı için
+            cache'lenir, her kare yeniden hesaplanmaz. */}
+        <g className="eksim-neon-border">
+          <path
+            d={TURKEY_PATH_D}
+            fill="none"
+            stroke="url(#tr-neon-grad)"
+            strokeWidth="5"
+            filter="url(#tr-neon)"
+            opacity="0.2"
+          />
+          <path
+            d={TURKEY_PATH_D}
+            fill="none"
+            stroke="url(#tr-neon-grad)"
+            strokeWidth="1.6"
+            filter="url(#tr-neon)"
+            opacity="0.32"
+          />
+          <path d={TURKEY_PATH_D} fill="none" stroke="#ffffff" strokeWidth="0.3" opacity="0.3" />
+        </g>
 
         {children}
       </g>
