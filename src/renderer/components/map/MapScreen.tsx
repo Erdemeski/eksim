@@ -5,11 +5,13 @@ import { MapBackground } from './MapBackground'
 import { LightRays } from './LightRays'
 import { EnergyGrid } from './EnergyGrid'
 import { LocationMarker } from './LocationMarker'
-import { LocationPinEmblem } from './LocationPinEmblem'
+import { MarkerRingsLayer } from './MarkerRingsLayer'
+import { ProvinceHighlight } from './ProvinceHighlight'
 import { PopupLayer, type DwellState } from './PopupLayer'
 import { MapIdlePanel } from './MapIdlePanel'
-import { RippleLayer } from './RippleLayer'
+import { NEIGHBOR_SUPPRESS, type MarkerVisualState } from './markerState'
 import { accentColor } from './SectorGraphics'
+import { ErrorBoundary } from '../ErrorBoundary'
 import { BrandLogo } from '../brand/BrandLogo'
 import { IntroScreen } from '../intro/IntroScreen'
 import { useFigureTouch } from '../../hooks/useFigureTouch'
@@ -34,6 +36,8 @@ const IDLE_MS = 15000
 const LEAVE_GRACE_MS = 400
 /** Pointer modu: bir pine imleç gelince aktivasyona kadar geri sayım (sn). */
 const DWELL_SECONDS = 3
+/** Boşta önizleme döngüsünde her pinin gösterim süresi (ms). */
+const CYCLE_MS = 10000
 
 /**
  * Monitör 1 — Türkiye SVG haritası deneyimi.
@@ -55,6 +59,7 @@ export function MapScreen(): React.JSX.Element {
   const setFigure = useKioskStore((s) => s.setFigure)
   const [intro, setIntro] = useState(true)
   const [dwell, setDwell] = useState<DwellState | null>(null)
+  const [cycleIndex, setCycleIndex] = useState(0)
 
   const deactivate = useCallback(() => {
     window.clearTimeout(idleTimer.current)
@@ -172,7 +177,50 @@ export function MapScreen(): React.JSX.Element {
     []
   )
 
-  const accent = activeLocation ? colorOf(activeLocation) : '#2EA6FF'
+  // Boşta önizleme döngüsü (10 sn'de bir sıradaki pin) — yalnız tamamen
+  // boştayken döner. PopupLayer'a ve il boyama/baloncuk gizlemeye tek kaynak.
+  const idle = !activeLocation && !dwell && !intro
+  useEffect(() => {
+    if (!idle) return
+    const id = window.setInterval(
+      () => setCycleIndex((i) => (i + 1) % EKSIM_LOCATIONS.length),
+      CYCLE_MS
+    )
+    return () => window.clearInterval(id)
+  }, [idle])
+  const previewLocation = idle ? EKSIM_LOCATIONS[cycleIndex % EKSIM_LOCATIONS.length] : null
+
+  // "Meşgul" pin: aktif > dwell(countdown) > idle-önizleme(preview). İlin
+  // boyanmasına ve MagicRings'e tek kaynak.
+  const engaged = activeLocation ?? dwell?.location ?? previewLocation
+  const engagedMode: MarkerVisualState | null = activeLocation
+    ? 'active'
+    : dwell
+      ? 'countdown'
+      : previewLocation
+        ? 'preview'
+        : null
+
+  // Birbirine çok yakın pin çiftleri: primary hover/standby'deyken (TAM
+  // aktivasyonda DEĞİL) komşusu tamamen gizlenir — üst üste binip primary'nin
+  // baloncuğunu/il boyamasını engellemesin diye.
+  const suppressedId =
+    engaged && engagedMode !== 'active' ? (NEIGHBOR_SUPPRESS[engaged.id] ?? null) : null
+
+  const markerStateFor = useCallback(
+    (loc: EksimLocation): MarkerVisualState => {
+      if (activeLocation?.id === loc.id) return 'active'
+      if (suppressedId === loc.id) return 'suppressed'
+      if (dwell?.location.id === loc.id) return 'countdown'
+      if (previewLocation?.id === loc.id) return 'preview'
+      return 'idle'
+    },
+    [activeLocation, suppressedId, dwell, previewLocation]
+  )
+
+  // MagicRings yalnız countdown/preview'da gösterilir (active'de baloncukla
+  // birlikte tamamen kaybolur).
+  const ringsLocation = engagedMode === 'countdown' || engagedMode === 'preview' ? engaged : null
 
   return (
     <div
@@ -188,18 +236,15 @@ export function MapScreen(): React.JSX.Element {
 
       <div className="absolute inset-0 z-10">
         <TurkeyMap svgRef={svgRef}>
-          {!intro && <EnergyGrid locations={EKSIM_LOCATIONS} />}
+          {/* Meşgul pinin ili — pin/bağların ALTINDA, uydu+neon sınırın üstünde. */}
+          {!intro && (
+            <ProvinceHighlight
+              provinceId={engaged?.provinceId ?? null}
+              color={engaged ? colorOf(engaged) : '#2EA6FF'}
+            />
+          )}
 
-          {/* Pin yanı santral amblemleri (aktif/geri sayım pininde geri çekilir). */}
-          {!intro &&
-            EKSIM_LOCATIONS.map((loc) => (
-              <LocationPinEmblem
-                key={`emb-${loc.id}`}
-                point={locationToViewBox(loc)}
-                kinds={loc.kinds}
-                dimmed={activeLocation?.id === loc.id || dwell?.location.id === loc.id}
-              />
-            ))}
+          {!intro && <EnergyGrid locations={EKSIM_LOCATIONS} />}
 
           {EKSIM_LOCATIONS.map((loc) => (
             <LocationMarker
@@ -207,17 +252,30 @@ export function MapScreen(): React.JSX.Element {
               location={loc}
               point={locationToViewBox(loc)}
               color={colorOf(loc)}
-              active={activeLocation?.id === loc.id}
+              state={markerStateFor(loc)}
               interactive={!figureTouch}
               onHoverChange={(hovering) => handleMarkerHover(loc, hovering)}
             />
           ))}
-
-          {activeLocation && (
-            <RippleLayer point={locationToViewBox(activeLocation)} color={accent} />
-          )}
         </TurkeyMap>
       </div>
+
+      {/* Dwell/idle-önizlemede pinin çevresinde MagicRings — intro bitince BİR
+          KEZ mount edilir ve bir daha unmount EDİLMEZ (WebGL bağlamı kalıcı,
+          görünürlük `location`/`paused` ile yönetilir — bkz. MarkerRingsLayer.tsx
+          içindeki STABİLİTE notu). ErrorBoundary: WebGL tarafında beklenmedik
+          bir hata olsa bile yalnız bu küçük katman düşer, tüm harita ekranı
+          boşalmaz. */}
+      {!intro && (
+        <ErrorBoundary fallback={null}>
+          <MarkerRingsLayer
+            location={ringsLocation}
+            color={ringsLocation ? colorOf(ringsLocation) : '#2EA6FF'}
+            svgRef={svgRef}
+            containerRef={containerRef}
+          />
+        </ErrorBoundary>
+      )}
 
       {/* Üstten yayılan ışık hüzmeleri (gerçek WebGL/ogl, bkz. LightRays.tsx).
           z-15: harita katmanının (z-10) ÜSTÜNDE, idle panel/popup'ın (z-20/30)
@@ -246,9 +304,9 @@ export function MapScreen(): React.JSX.Element {
 
       {/* Pin popup katmanı (idle tanıtım + geri sayım + aktif detay). */}
       <PopupLayer
-        locations={EKSIM_LOCATIONS}
         activeLocation={activeLocation}
         dwell={dwell}
+        previewLocation={previewLocation}
         hidden={intro}
         svgRef={svgRef}
         containerRef={containerRef}

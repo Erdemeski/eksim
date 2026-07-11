@@ -88,46 +88,39 @@ body,
   background: radial-gradient(ellipse at center, transparent 55%, rgba(5, 9, 18, 0.85) 100%);
 }
 
-/* Boştaki marker halkasının yumuşak nabzı (görünürlük). */
-.eksim-halo {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: eksim-halo-pulse 3.2s ease-in-out infinite;
-}
-@keyframes eksim-halo-pulse {
-  0%, 100% { transform: scale(1); opacity: 0.28; }
-  50% { transform: scale(1.35); opacity: 0.08; }
-}
-
-/* ---- Harita amblem/şebeke animasyonları — CSS-NATİF (compositor-only) ----
+/* ---- Pin baloncuğu (GIF'li beyaz daire) — compositor-only süzülme ----
  *
- * PERF: 17 pinde 14'e varan rüzgar türbini + EnergyGrid'in ~16 çizgisi/8 şehir
- * ışığı önceden GSAP (JS ana iş parçacığında, her karede) döndürülüyor/
- * titretiliyordu. Bunlar salt `transform`/`opacity` — tarayıcı bu ikisini
- * compositor thread'inde (GPU, JS'siz) çalıştırabilir. CSS keyframe'e taşımak
- * ana iş parçacığı yükünü kaldırır, GÖRÜNÜM birebir aynı kalır. Bu da video
- * penceresiyle paylaşılan GPU sürecindeki rekabeti azaltır (bkz. main/index.ts,
- * TurkeyMap.tsx'teki önceki performans notları).
+ * Baloncuk foreignObject içindeki HTML div'dir (GIF'ler SVG <image>'da
+ * oynamaz). Süzülme yalnız translateY (compositor); gizlenme/hover ölçeği
+ * inline transition ile AYRI dış katmanda (transform çakışması yok). */
+.eksim-bubble-float {
+  animation: eksim-bubble-float 3.6s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes eksim-bubble-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2.6px); }
+}
+
+/* Hover/önizlemede boyanan il alanının yumuşak nefesi (yalnız opacity —
+   filtre yok, raster statik kalır). */
+.eksim-province-breathe {
+  animation: eksim-province-breathe 3.4s ease-in-out infinite alternate;
+}
+@keyframes eksim-province-breathe {
+  from { opacity: 0.82; }
+  to { opacity: 1; }
+}
+
+/* ---- Harita şebeke animasyonları — CSS-NATİF (compositor-only) ----
+ *
+ * PERF: EnergyGrid'in ~16 çizgisi/8 şehir ışığı önceden GSAP (JS ana iş
+ * parçacığında, her karede) titretiliyordu. Bunlar salt `transform`/`opacity`
+ * — tarayıcı bu ikisini compositor thread'inde (GPU, JS'siz) çalıştırabilir.
+ * CSS keyframe'e taşımak ana iş parçacığı yükünü kaldırır, GÖRÜNÜM birebir
+ * aynı kalır. Bu da video penceresiyle paylaşılan GPU sürecindeki rekabeti
+ * azaltır (bkz. main/index.ts, TurkeyMap.tsx'teki önceki performans notları).
  */
-.emb-blades {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: eksim-blade-spin 7s linear infinite;
-}
-@keyframes eksim-blade-spin {
-  to { transform: rotate(360deg); }
-}
-
-.emb-leaf {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: eksim-leaf-sway 2.6s ease-in-out infinite alternate;
-}
-@keyframes eksim-leaf-sway {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(6deg); }
-}
-
 .eg-base {
   animation: eksim-eg-pulse 2.8s ease-in-out infinite alternate;
 }
@@ -173,9 +166,8 @@ body,
   .eg-flow,
   .eg-base,
   .eg-city,
-  .emb-blades,
-  .emb-leaf,
-  .eksim-halo,
+  .eksim-bubble-float,
+  .eksim-province-breathe,
   .eksim-aurora,
   .eksim-light-rays__beam {
     animation: none;

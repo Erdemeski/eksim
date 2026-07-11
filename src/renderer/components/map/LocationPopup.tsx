@@ -1,19 +1,29 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import gsap from 'gsap'
 import type { EksimLocation, FacilityKind, Point } from '@shared/types'
-import { FACILITY_COLOR, FACILITY_LABEL, SectorIcon } from './SectorGraphics'
+import { FACILITY_COLOR, FACILITY_LABEL } from './SectorGraphics'
+import windIconPng from '../../assets/wind-power.png'
+import solarIconPng from '../../assets/solar-panel.png'
+import hydroIconPng from '../../assets/hydro-power.png'
 
 export type PopupMode = 'preview' | 'countdown' | 'active'
 
 interface LocationPopupProps {
-  /** Konteyner-göreli pin ekran konumu (px). */
+  /** Kartın konteyner-göreli EKRAN çıpası (kartın ÜST-ORTA noktası). */
   pos: Point
-  /** Kart pinin üstünde mi altında mı dursun (ekran kenarına göre). */
-  placement: 'top' | 'bottom'
+  /**
+   * Gerçek render yüksekliği ölçülünce PopupLayer'a bildirir (id ile
+   * etiketli). ÖNEMLİ: PopupLayer'la PAYLAŞILAN bir ref DEĞİL — AnimatePresence
+   * çıkış/giriş geçişinde eski ve yeni kart aynı anda DOM'da olabildiğinden,
+   * paylaşılan tek bir ref'in hangi karta bağlı kalacağı belirsizleşir (yarış
+   * durumu). Bunun yerine her kart KENDİ iç ref'ini ölçer, id'siyle bildirir —
+   * PopupLayer yalnız GÜNCEL hedefin ölçümünü uygular, bayat/çıkan kartınkini yok sayar.
+   */
+  onMeasure?: (locationId: string, height: number) => void
   mode: PopupMode
   location: EksimLocation
-  /** Sahadaki türler (hibrit sahada birden fazla — hepsi kapsül olarak gösterilir). */
+  /** Sahadaki türler (hibrit sahada birden fazla). */
   kinds: FacilityKind[]
   /** Birincil accent renk (hibritte mor; tekil türde kendi rengi). */
   color: string
@@ -57,53 +67,113 @@ function AnimatedNumber({ value }: { value: number }): React.JSX.Element {
   )
 }
 
-/** Pinden karta olan dikey boşluk (px) — kuyruk pini işaret eder. */
-const GAP = 34
-
-/** Kuyruk/kart cam zemini (tail düz renk ister; karttaki camla aynı aile). */
-const GLASS_BG = 'rgba(10, 16, 32, 0.58)'
-const GLASS_TAIL = 'rgba(13, 20, 38, 0.88)'
-const GLASS_BORDER = 'rgba(255, 255, 255, 0.13)'
+/** Kullanıcının eklediği PNG ikonlar (siyah silüet, şeffaf zemin) — yalnız
+    enerji türleri için; 'food' bu pinlerde hiç oluşmaz. */
+const KIND_ICON_PNG: Partial<Record<FacilityKind, string>> = {
+  wind: windIconPng,
+  solar: solarIconPng,
+  hydro: hydroIconPng
+}
 
 /**
- * Pin üzerinde konumlanan premium bilgi baloncuğu — KOYU CAM tasarım
- * (mockup'a göre): dikey tür kapsülleri (tür başına MW), beyaz başlık,
- * "yatırım aşamasında" rozeti, büyük parlayan toplam MW sayacı.
+ * Proje satırı ikonu: PNG siluet, CSS `mask-image` ile türün rengine boyanır
+ * (PNG'nin alfa kanalı şekli verir, dolgu rengi `backgroundColor`'dan gelir —
+ * orijinal PNG rengi ne olursa olsun türe göre doğru renkte çıkar).
+ */
+function KindIcon({ kind, color }: { kind: FacilityKind; color: string }): React.JSX.Element {
+  const icon = KIND_ICON_PNG[kind]
+  if (!icon) return <span className="block h-5 w-5" style={{ background: color, borderRadius: 4 }} />
+  return (
+    <span
+      className="block h-5 w-5"
+      style={{
+        backgroundColor: color,
+        WebkitMaskImage: `url(${icon})`,
+        maskImage: `url(${icon})`,
+        WebkitMaskSize: 'contain',
+        maskSize: 'contain',
+        WebkitMaskRepeat: 'no-repeat',
+        maskRepeat: 'no-repeat',
+        WebkitMaskPosition: 'center',
+        maskPosition: 'center'
+      }}
+    />
+  )
+}
+
+/** Kart cam zemini. */
+const GLASS_BG = 'rgba(10, 16, 32, 0.58)'
+const GLASS_BORDER = 'rgba(255, 255, 255, 0.13)'
+
+/** Popup'ta ayrı bölüm olarak listelenen tek bir proje satırı. */
+interface ProjectSection {
+  key: string
+  kind: FacilityKind
+  name: string
+  mw: number
+}
+
+/**
+ * Pinin kapsadığı projeleri ayrı bölümlere çözer (kullanıcı isteği: birden
+ * fazla proje tek projeymiş gibi değil, ayraçla alt alta gösterilsin):
+ *  1. Birleşik pinler (`subprojects`) → alt proje başına bölüm (ad + MW; ikon
+ *     pinin birincil türü — birleşik pinler tek türlüdür).
+ *  2. Hibrit sahalar (birden çok tür) → tür başına bölüm (`capacities` MW'ı).
+ *  3. Tek proje → tek bölüm (tür etiketi + mevcut MW).
+ */
+function projectSections(location: EksimLocation): ProjectSection[] {
+  const primary = location.kinds[0]
+  if (location.subprojects && location.subprojects.length > 0) {
+    return location.subprojects.map((s) => ({ key: s.name, kind: primary, name: s.name, mw: s.mw }))
+  }
+  const caps = location.capacities ?? []
+  if (location.kinds.length > 1) {
+    return location.kinds.map((k) => ({
+      key: k,
+      kind: k,
+      name: FACILITY_LABEL[k],
+      mw: caps.find((c) => c.kind === k)?.mw ?? 0
+    }))
+  }
+  return [{ key: primary, kind: primary, name: FACILITY_LABEL[primary], mw: caps[0]?.mw ?? 0 }]
+}
+
+/**
+ * İlin sınırlarının ALTINA hizalanan premium bilgi kartı — KOYU CAM tasarım:
+ * beyaz başlık, proje bölümleri (ayraç çizgili alt alta liste), "yatırım
+ * aşamasında" rozeti, büyük parlayan toplam MW sayacı. Belirli bir pini
+ * işaret eden çentik/kuyruk YOK (kart artık pine değil, ile bağlı — bkz.
+ * PopupLayer'daki il-bbox tabanlı konumlama).
  *
  * Cam yüzey, reactbits GlassSurface'in DARK-MODE FALLBACK stilidir
  * (blur+saturate backdrop + inset ışık vurguları) — tam sürümdeki
  * `backdrop-filter: url(#svg-displacement)` BİLEREK kullanılmaz: SVG
  * displacement backdrop'u her kare yeniden rasterize eder ve bu projede
- * tek tek söktüğümüz takılma deseninin ta kendisidir. Küçük popup alanında
- * düz blur'un maliyeti ihmal edilebilir.
+ * tek tek söktüğümüz takılma deseninin ta kendisidir.
  *
- * Üç modda tek yapı: preview (kapsüller + başlık + toplam MW), countdown
- * (+ ilerleme çubuğu), active (+ rozet, açıklama, subproject çipleri;
- * framer `layout` ile yumuşak büyür). Giriş/çıkış AnimatePresence.
+ * Üç modda tek yapı: preview (başlık + bölümler + toplam MW), countdown
+ * (+ ilerleme çubuğu), active (+ rozet, açıklama; framer `layout` ile yumuşak
+ * büyür). Giriş/çıkış AnimatePresence.
  */
 export function LocationPopup({
   pos,
-  placement,
+  onMeasure,
   mode,
   location,
   kinds,
   color,
   progress = 0
 }: LocationPopupProps): React.JSX.Element {
-  const offsetY = placement === 'top' ? `calc(-100% - ${GAP}px)` : `${GAP}px`
-  const tail =
-    placement === 'top'
-      ? { bottom: -9, borderWidth: '10px 9px 0 9px', borderColor: `${GLASS_TAIL} transparent transparent transparent` }
-      : { top: -9, borderWidth: '0 9px 10px 9px', borderColor: `transparent transparent ${GLASS_TAIL} transparent` }
-
-  const activeCapacities = location.capacities?.filter((c) => c.mw > 0) ?? []
-  // Kapasite kırılımı yoksa (ör. tümü yatırım aşamasında) kapsüller ikon-only düşer.
-  const pills =
-    activeCapacities.length > 0
-      ? activeCapacities
-      : kinds.map((k) => ({ kind: k, mw: 0 }))
-  const hasSubprojects = (location.subprojects?.length ?? 0) > 0
+  const cardRef = useRef<HTMLDivElement>(null)
+  const sections = projectSections(location)
   const isActive = mode === 'active'
+
+  // Her kart KENDİ ref'ini ölçer (bkz. onMeasure prop açıklaması) — layout
+  // yüksekliği (offsetHeight) transform/scale animasyonundan etkilenmez,
+  // bu yüzden giriş animasyonu sürerken bile doğru değer okunur.
+  useLayoutEffect(() => {
+    if (cardRef.current) onMeasure?.(location.id, cardRef.current.offsetHeight)
+  })
 
   return (
     // Statik konum çıpası — burada transform ANİMASYONU YOK. Kritik: giriş
@@ -112,7 +182,7 @@ export function LocationPopup({
     // (Chromium davranışı). Bu yüzden animasyon aşağıda, backdrop-filter
     // taşıyan öğenin KENDİSİNDE.
     <div className="absolute" style={{ left: pos.x, top: pos.y }}>
-      <div className="relative" style={{ transform: `translate(-50%, ${offsetY})` }}>
+      <div ref={cardRef} className="relative" style={{ transform: 'translateX(-50%)' }}>
         <motion.div
           layout
           className="relative flex flex-col overflow-hidden"
@@ -121,7 +191,7 @@ export function LocationPopup({
           exit={{ opacity: 0, scale: 0.9 }}
           transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
           style={{
-            width: isActive ? 368 : 272,
+            width: isActive ? 368 : 296,
             borderRadius: 24,
             background: GLASS_BG,
             backdropFilter: 'blur(16px) saturate(1.5)',
@@ -139,83 +209,72 @@ export function LocationPopup({
             style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent)' }}
           />
 
-          <div className="flex gap-3.5 px-4 pb-2 pt-4">
-            {/* Dikey tür kapsülleri — tür başına büyütülmüş ikon + altında
-                iki satırlı MW (büyük/bold sayı, altında küçük "MW" birimi,
-                ortalanmış). */}
-            <div className="flex shrink-0 gap-2 max-h-24">
-              {pills.map((p) => {
-                const kc = FACILITY_COLOR[p.kind]
-                return (
-                  <div
-                    key={p.kind}
-                    className="flex w-14 flex-col items-center gap-2 rounded-full px-1 py-2"
-                    style={{
-                      background: `linear-gradient(180deg, ${kc}3d, ${kc}14)`,
-                      boxShadow: `inset 0 0 0 1px ${kc}55, inset 0 1px 6px ${kc}22`
-                    }}
-                  >
+          {/* Başlık bloğu: tür etiketi + saha adı + (aktifte) rozet. */}
+          <div className="px-4 pb-1 pt-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color }}>
+              {kinds.map((k) => FACILITY_LABEL[k]).join(' & ')}
+            </p>
+            <h3 className="mt-1 text-[19px] font-bold leading-tight tracking-tight text-white">
+              {location.name}
+            </h3>
+
+            {isActive && (location.additionalMw ?? 0) > 0 && (
+              <motion.span
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: 0.12 }}
+                className="mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold text-white/85"
+                style={{ background: 'rgba(255,255,255,0.08)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.16)' }}
+              >
+                +{fmtMw(location.additionalMw ?? 0)} MW yatırım aşamasında
+              </motion.span>
+            )}
+          </div>
+
+          {/* Proje bölümleri — her proje ayrı satır, aralarında ayraç çizgisi. */}
+          <div className="mt-1.5 flex flex-col px-4">
+            {sections.map((s, i) => {
+              const kc = FACILITY_COLOR[s.kind]
+              return (
+                <React.Fragment key={s.key}>
+                  {i > 0 && (
                     <div
-                      className="flex h-10 w-10 items-center justify-center rounded-full"
-                      style={{ background: `${kc}2b`, color: kc, boxShadow: `inset 0 0 0 1px ${kc}66` }}
+                      className="h-px w-full"
+                      style={{
+                        background:
+                          'linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent)'
+                      }}
+                    />
+                  )}
+                  <div className="flex items-center gap-3 py-2">
+                    <div
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                      style={{
+                        background: `linear-gradient(180deg, ${kc}3d, ${kc}14)`,
+                        boxShadow: `inset 0 0 0 1px ${kc}55`
+                      }}
                     >
-                      <SectorIcon kind={p.kind} className="h-7 w-7" />
+                      <KindIcon kind={s.kind} color={kc} />
                     </div>
-                    <div className="flex flex-col items-center leading-none">
-                      <span className="text-[16px] font-extrabold tabular-nums text-white">
-                        {p.mw > 0 ? fmtMw(p.mw) : '—'}
-                      </span>
-                      {p.mw > 0 && (
-                        <span className="mt-1 text-[10px] font-bold uppercase tracking-wider text-white/55">
-                          MW
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Sağ blok: etiket + başlık + (aktifte) rozet ve çipler. */}
-            <div className="min-w-0 flex-1 pt-0.5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color }}>
-                {kinds.map((k) => FACILITY_LABEL[k]).join(' & ')}
-              </p>
-              <h3 className="mt-1 text-[20px] font-bold leading-tight tracking-tight text-white">
-                {location.name}
-              </h3>
-
-              {isActive && (location.additionalMw ?? 0) > 0 && (
-                <motion.span
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, delay: 0.12 }}
-                  className="mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold text-white/85"
-                  style={{ background: 'rgba(255,255,255,0.08)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.16)' }}
-                >
-                  +{fmtMw(location.additionalMw ?? 0)} MW yatırım aşamasında
-                </motion.span>
-              )}
-
-              {isActive && hasSubprojects && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.35, delay: 0.18 }}
-                  className="mt-2 flex flex-wrap gap-1.5"
-                >
-                  {location.subprojects?.map((s) => (
-                    <span
-                      key={s.name}
-                      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                      style={{ background: `${color}1f`, color: '#ffffff', boxShadow: `inset 0 0 0 1px ${color}44` }}
-                    >
-                      {s.name} · {fmtMw(s.mw)} MW
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-white/90">
+                      {s.name}
                     </span>
-                  ))}
-                </motion.div>
-              )}
-            </div>
+                    <span className="shrink-0 text-[15px] font-extrabold tabular-nums text-white">
+                      {s.mw > 0 ? (
+                        <>
+                          {fmtMw(s.mw)}
+                          <span className="ml-1 text-[10px] font-bold uppercase tracking-wider text-white/55">
+                            MW
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-white/45">—</span>
+                      )}
+                    </span>
+                  </div>
+                </React.Fragment>
+              )
+            })}
           </div>
 
           {/* countdown: accent ilerleme çubuğu. */}
@@ -229,7 +288,7 @@ export function LocationPopup({
           )}
 
           {/* Alt satır: büyük parlayan toplam MW + (aktifte) açıklama. */}
-          <div className="flex items-end gap-4 px-4 pb-4 pt-2">
+          <div className="flex items-end gap-4 px-4 pb-4 pt-1.5">
             <div className="shrink-0">
               <p
                 className="text-[30px] font-extrabold leading-none tabular-nums text-white"
@@ -255,18 +314,6 @@ export function LocationPopup({
             )}
           </div>
         </motion.div>
-
-        {/* Pine bakan cam kuyruk (kart dışında — overflow-hidden kırpmaz). */}
-        <div
-          className="absolute left-1/2 h-0 w-0 -translate-x-1/2"
-          style={{
-            borderStyle: 'solid',
-            borderWidth: tail.borderWidth,
-            borderColor: tail.borderColor,
-            ...(placement === 'top' ? { bottom: tail.bottom } : { top: tail.top }),
-            filter: 'drop-shadow(0 2px 4px rgba(2,6,16,0.5))'
-          }}
-        />
       </div>
     </div>
   )

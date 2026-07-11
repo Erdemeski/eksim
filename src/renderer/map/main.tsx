@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import gsap from 'gsap'
 import { MapScreen } from '../components/map/MapScreen'
+import { ErrorBoundary } from '../components/ErrorBoundary'
 import '../styles/index.css'
 
 /**
@@ -18,6 +19,11 @@ gsap.ticker.fps(30)
 /** Harita penceresi giriş noktası (Monitör 1). */
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <MapScreen />
+    {/* Kiosk gözetimsiz çalışır: yakalanmamış bir hata tüm kökü boşaltıp
+        pencereyi düz koyu-lacivert `body` arkaplanına indirmesin (gözlemlenen
+        çökme belirtisi) — hata birkaç saniye sonra sessizce kendini toparlar. */}
+    <ErrorBoundary retryMs={4000}>
+      <MapScreen />
+    </ErrorBoundary>
   </React.StrictMode>
 )

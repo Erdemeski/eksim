@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import gsap from 'gsap'
 import { VideoScreen } from '../components/video/VideoScreen'
+import { ErrorBoundary } from '../components/ErrorBoundary'
 import '../styles/index.css'
 
 /**
@@ -16,6 +17,9 @@ gsap.ticker.fps(30)
 /** Video penceresi giriş noktası (Monitör 2). */
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <VideoScreen />
+    {/* map/main.tsx ile aynı gözetimsiz-kiosk güvenlik ağı — bkz. oradaki not. */}
+    <ErrorBoundary retryMs={4000}>
+      <VideoScreen />
+    </ErrorBoundary>
   </React.StrictMode>
 )

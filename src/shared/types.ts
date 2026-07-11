@@ -29,6 +29,12 @@ export interface EksimLocation {
    * Marker SVG içinde bu noktaya çizilir → çözünürlükten bağımsız, kaymaz.
    */
   svgPoint?: Point
+  /**
+   * Tesisin bulunduğu ilin simplemaps kodu (ör. "TR35" = İzmir) — hover/idle
+   * önizlemede ilin siyasi sınırını boyayan ProvinceHighlight bu koda göre
+   * trProvinces.ts'ten path seçer.
+   */
+  provinceId: string
   /** Lokal video dosyası temel adı (resources/videos/<videoId>.mp4). Opsiyonel. */
   videoId?: string
   /** Lokal video yoksa kullanılacak çevrimiçi video URL'i. Opsiyonel. */

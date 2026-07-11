@@ -1,7 +1,8 @@
-import React, { useEffect, useLayoutEffect, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import type { EksimLocation, Point } from '@shared/types'
-import { locationToViewBox, viewBoxToScreen } from '../../services/svgMapService'
+import { viewBoxToScreen } from '../../services/svgMapService'
+import { TR_PROVINCES } from './trProvinces'
 import { accentColor } from './SectorGraphics'
 import { LocationPopup, type PopupMode } from './LocationPopup'
 
@@ -13,20 +14,23 @@ export interface DwellState {
 }
 
 interface PopupLayerProps {
-  locations: readonly EksimLocation[]
   activeLocation: EksimLocation | null
   dwell: DwellState | null
+  /**
+   * Boşta döngüde sırası gelen pin (MapScreen yönetir — il boyama ve baloncuk
+   * gizlemeyle aynı kaynak; yalnız tamamen boştayken non-null gelir).
+   */
+  previewLocation: EksimLocation | null
   /** Popup katmanı gizli olmalı mı (ör. intro). */
   hidden?: boolean
   svgRef: React.RefObject<SVGSVGElement | null>
   containerRef: React.RefObject<HTMLElement | null>
 }
 
-/** Idle önizleme döngüsünde her pinin gösterim süresi (ms). */
-const CYCLE_MS = 10000
-/** Kartın yatay yarı-genişlik payı (ekran kenarına yaslanmayı önler) —
-    aktif cam kart ~368px genişliğinde → yarısı + kenar payı. */
-const X_PAD = 190
+/** İlin alt kenarı ile kart arası dikey boşluk (px). */
+const PROVINCE_GAP = 28
+/** Görünür alan kenar payı (px) — kart pencere dışına taşmasın. */
+const EDGE_PAD = 20
 
 interface Resolved {
   location: EksimLocation
@@ -35,44 +39,47 @@ interface Resolved {
   progress: number
 }
 
+/** Kart genişliği moda göre sabit (LocationPopup'taki style ile birebir). */
+function cardWidth(mode: PopupMode): number {
+  return mode === 'active' ? 368 : 296
+}
+
 /**
  * Pin popup orkestratörü. Durum önceliği: active > countdown(dwell) > preview
- * (idle döngü). Idle'da pinleri sırayla, tek tek, loop halinde tanıtır. Konum
- * pin → ekran projeksiyonuyla hesaplanır (viewBoxToScreen); mod değişiminde
- * (aynı pin) konum sabit kalır → popup yerinde büyür.
+ * (idle döngüsü MapScreen'de — buraya previewLocation olarak gelir).
+ *
+ * Konumlama: kart artık PİNE değil, pinin bulunduğu İLİN sınırının ALT
+ * KENARINA hizalanır (bazı iller pinin hemen altında kalıp kartı taşırıyordu).
+ * İki aşamalı:
+ *  (1) İl bbox'ının alt-orta noktası ekrana projelenir + yatayda kart
+ *      genişliğine göre KESİN clamp (genişlik moda göre sabit, tam hesaplanır).
+ *  (2) `LocationPopup` kendi gerçek yüksekliğini (offsetHeight — transform/scale
+ *      animasyonundan ETKİLENMEZ) `onMeasure` ile bildirir; dikeyde konteyner
+ *      taşmasın diye burada ikinci bir clamp uygulanır. Ölçüm id'li bildirilir
+ *      ve yalnız GÜNCEL hedefinki uygulanır — AnimatePresence çıkış/giriş
+ *      geçişinde eski ve yeni kart aynı anda DOM'dayken paylaşılan bir ref'in
+ *      yanlış (çıkan) karta bağlı kalma riskini ortadan kaldırır.
+ * İkisi de useLayoutEffect/senkron state güncellemesiyle boyamadan ÖNCE
+ * uygulanır → görünür sıçrama olmaz.
  */
 export function PopupLayer({
-  locations,
   activeLocation,
   dwell,
+  previewLocation,
   hidden = false,
   svgRef,
   containerRef
 }: PopupLayerProps): React.JSX.Element | null {
-  const [cycleIndex, setCycleIndex] = useState(0)
-  const [pos, setPos] = useState<{ x: number; y: number; placement: 'top' | 'bottom' } | null>(null)
+  const rawAnchorRef = useRef<{ x: number; y: number } | null>(null)
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
   const [resizeNonce, setResizeNonce] = useState(0)
 
-  // Pencere yeniden boyutlanınca konumu tazele (aşağıdaki layout effect'i tetikler).
+  // Pencere yeniden boyutlanınca konumu tazele.
   useEffect(() => {
     const onResize = (): void => setResizeNonce((n) => n + 1)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-
-  // Idle önizleme döngüsü — yalnızca boştayken (active/dwell/hidden yokken) döner.
-  const idle = !activeLocation && !dwell && !hidden
-  useEffect(() => {
-    if (idle || locations.length === 0) {
-      if (!idle) return
-      const id = window.setInterval(
-        () => setCycleIndex((i) => (i + 1) % locations.length),
-        CYCLE_MS
-      )
-      return () => window.clearInterval(id)
-    }
-    return undefined
-  }, [idle, locations.length])
 
   // Gösterilecek hedef + mod.
   let resolved: Resolved | null = null
@@ -87,49 +94,73 @@ export function PopupLayer({
       secondsLeft: dwell.secondsLeft,
       progress: dwell.progress
     }
-  } else if (locations.length > 0) {
-    resolved = {
-      location: locations[cycleIndex % locations.length],
-      mode: 'preview',
-      secondsLeft: 0,
-      progress: 0
-    }
+  } else if (previewLocation) {
+    resolved = { location: previewLocation, mode: 'preview', secondsLeft: 0, progress: 0 }
   }
 
   const targetId = resolved?.location.id ?? null
+  const provinceId = resolved?.location.provinceId ?? null
 
-  // Konumu hesapla — hedef pin veya resize değişince (mod değişince DEĞİL → sabit).
+  // Faz 1: İlin ALT KENARININ ortasına göre ham çıpa (Y henüz yükseklik-clamp'siz) + yatay clamp.
   useLayoutEffect(() => {
     const svg = svgRef.current
     const container = containerRef.current
-    if (!resolved || !svg || !container) {
+    if (!resolved || !svg || !container || !provinceId) {
+      rawAnchorRef.current = null
       setPos(null)
       return
     }
-    const vb: Point = locationToViewBox(resolved.location)
-    const screen = viewBoxToScreen(svg, vb)
+    const province = TR_PROVINCES[provinceId]
+    if (!province) {
+      rawAnchorRef.current = null
+      setPos(null)
+      return
+    }
+    const bottomCenter: Point = {
+      x: province.bbox.x + province.bbox.width / 2,
+      y: province.bbox.y + province.bbox.height
+    }
+    const screen = viewBoxToScreen(svg, bottomCenter)
     if (!screen) return
     const rect = container.getBoundingClientRect()
-    const x = Math.min(Math.max(screen.x - rect.left, X_PAD), rect.width - X_PAD)
-    const y = screen.y - rect.top
-    // Popup her zaman pinin ALTINDA gösterilir (kullanıcı tercihi).
-    setPos({ x, y, placement: 'bottom' })
-    // resolved.mode kasıtlı olarak bağımlılık DEĞİL: aynı pinde büyürken kaymaz.
-    // resizeNonce → pencere yeniden boyutlanınca yeniden hesapla.
+    const width = cardWidth(resolved.mode)
+    const halfW = width / 2 + EDGE_PAD
+    const rawX = screen.x - rect.left
+    const rawY = screen.y - rect.top + PROVINCE_GAP
+    const clampedX = Math.min(Math.max(rawX, halfW), Math.max(halfW, rect.width - halfW))
+    rawAnchorRef.current = { x: clampedX, y: rawY }
+    setPos({ x: clampedX, y: rawY })
+    // resolved.mode/secondsLeft/progress kasıtlı bağımlılık DEĞİL — yalnız
+    // hedef/il/resize değişince yeniden hesaplanır (aynı pinde büyürken kaymaz).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId, resizeNonce, svgRef, containerRef])
+  }, [targetId, provinceId, resizeNonce, svgRef, containerRef])
+
+  // Faz 2: LocationPopup kendi gerçek yüksekliğini bildirdikçe (mod/içerik
+  // değiştikçe tekrar tetiklenir) dikey konumu konteyner sınırları içinde tutar.
+  const handleMeasure = useCallback(
+    (locationId: string, height: number) => {
+      if (locationId !== targetId) return // bayat/çıkan kartın ölçümünü yok say
+      const anchor = rawAnchorRef.current
+      const container = containerRef.current
+      if (!anchor || !container) return
+      const containerH = container.getBoundingClientRect().height
+      const maxY = containerH - EDGE_PAD - height
+      const clampedY = Math.min(anchor.y, Math.max(EDGE_PAD, maxY))
+      setPos((p) => (p && Math.abs(p.y - clampedY) > 0.5 ? { x: p.x, y: clampedY } : p))
+    },
+    [targetId, containerRef]
+  )
 
   // z-30: harita (z-10) ve idle panel (z-20) ÜSTÜNDE, logo (z-40)/intro (z-50)
-  // altında. pointer-events-none → harita hover etkileşimi bozulmaz. Bu sarmalayıcı
-  // olmadan popup z-auto kalır ve z-10 uydu haritanın ARKASINDA boyanır (görünmez).
+  // altında. pointer-events-none → harita hover etkileşimi bozulmaz.
   return (
     <div className="pointer-events-none absolute inset-0 z-30">
       <AnimatePresence>
         {resolved && pos && (
           <LocationPopup
             key={resolved.location.id}
-            pos={{ x: pos.x, y: pos.y }}
-            placement={pos.placement}
+            onMeasure={handleMeasure}
+            pos={pos}
             mode={resolved.mode}
             location={resolved.location}
             kinds={resolved.location.kinds}
