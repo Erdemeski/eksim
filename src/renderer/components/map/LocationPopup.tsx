@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import gsap from 'gsap'
 import type { EksimLocation, FacilityKind, Point } from '@shared/types'
@@ -10,17 +10,15 @@ import hydroIconPng from '../../assets/hydro-power.png'
 export type PopupMode = 'preview' | 'countdown' | 'active'
 
 interface LocationPopupProps {
-  /** Kartın konteyner-göreli EKRAN çıpası (kartın ÜST-ORTA noktası). */
+  /** Kartın konteyner-göreli EKRAN çıpası (ilin üst/alt kenar orta noktası). */
   pos: Point
   /**
-   * Gerçek render yüksekliği ölçülünce PopupLayer'a bildirir (id ile
-   * etiketli). ÖNEMLİ: PopupLayer'la PAYLAŞILAN bir ref DEĞİL — AnimatePresence
-   * çıkış/giriş geçişinde eski ve yeni kart aynı anda DOM'da olabildiğinden,
-   * paylaşılan tek bir ref'in hangi karta bağlı kalacağı belirsizleşir (yarış
-   * durumu). Bunun yerine her kart KENDİ iç ref'ini ölçer, id'siyle bildirir —
-   * PopupLayer yalnız GÜNCEL hedefin ölçümünü uygular, bayat/çıkan kartınkini yok sayar.
+   * Kartın çıpaya göre nereye açılacağı: 'bottom' → çıpanın ALTINA (il alt
+   * kenarı), 'top' → çıpanın ÜSTÜNE (il üst kenarı). Üst yerleşimde kart CSS
+   * `translateY(-100%)` ile kendi yüksekliği kadar yukarı çekilir — JS ölçümü
+   * GEREKMEZ (eski ölçüm-clamp geri besleme döngüsü kaldırıldı; çökme kaynağıydı).
    */
-  onMeasure?: (locationId: string, height: number) => void
+  placement: 'top' | 'bottom'
   mode: PopupMode
   location: EksimLocation
   /** Sahadaki türler (hibrit sahada birden fazla). */
@@ -85,7 +83,7 @@ function KindIcon({ kind, color }: { kind: FacilityKind; color: string }): React
   if (!icon) return <span className="block h-5 w-5" style={{ background: color, borderRadius: 4 }} />
   return (
     <span
-      className="block h-5 w-5"
+      className={`block h-6 w-6 ${kind === 'wind' ? 'translate-x-0.5' : ''}`}
       style={{
         backgroundColor: color,
         WebkitMaskImage: `url(${icon})`,
@@ -139,11 +137,13 @@ function projectSections(location: EksimLocation): ProjectSection[] {
 }
 
 /**
- * İlin sınırlarının ALTINA hizalanan premium bilgi kartı — KOYU CAM tasarım:
- * beyaz başlık, proje bölümleri (ayraç çizgili alt alta liste), "yatırım
- * aşamasında" rozeti, büyük parlayan toplam MW sayacı. Belirli bir pini
- * işaret eden çentik/kuyruk YOK (kart artık pine değil, ile bağlı — bkz.
- * PopupLayer'daki il-bbox tabanlı konumlama).
+ * İlin sınırlarının ALTINA veya ÜSTÜNE hizalanan premium bilgi kartı — KOYU
+ * CAM tasarım: beyaz başlık, proje bölümleri (ayraç çizgili alt alta liste),
+ * "yatırım aşamasında" rozeti, büyük parlayan toplam MW sayacı. Belirli bir
+ * pini işaret eden çentik/kuyruk YOK (kart artık pine değil, ile bağlı — bkz.
+ * PopupLayer'daki il-bbox tabanlı konumlama). `placement='top'` iken kart CSS
+ * `translateY(-100%)` ile kendi yüksekliği kadar yukarı çekilir (JS ölçümü
+ * yok → eski ölçüm-clamp döngüsü ve onun tetiklediği çökme ortadan kalkar).
  *
  * Cam yüzey, reactbits GlassSurface'in DARK-MODE FALLBACK stilidir
  * (blur+saturate backdrop + inset ışık vurguları) — tam sürümdeki
@@ -157,23 +157,20 @@ function projectSections(location: EksimLocation): ProjectSection[] {
  */
 export function LocationPopup({
   pos,
-  onMeasure,
+  placement,
   mode,
   location,
   kinds,
   color,
   progress = 0
 }: LocationPopupProps): React.JSX.Element {
-  const cardRef = useRef<HTMLDivElement>(null)
   const sections = projectSections(location)
   const isActive = mode === 'active'
-
-  // Her kart KENDİ ref'ini ölçer (bkz. onMeasure prop açıklaması) — layout
-  // yüksekliği (offsetHeight) transform/scale animasyonundan etkilenmez,
-  // bu yüzden giriş animasyonu sürerken bile doğru değer okunur.
-  useLayoutEffect(() => {
-    if (cardRef.current) onMeasure?.(location.id, cardRef.current.offsetHeight)
-  })
+  // Alt yerleşim: çıpa (il alt kenarı) kartın ÜST-ortasıdır. Üst yerleşim:
+  // çıpa (il üst kenarı) kartın ALT-ortasıdır → kart kendi yüksekliği kadar
+  // yukarı (translateY -100%). Statik transform (animasyon değil) → iç cam
+  // motion.div'in backdrop-filter'ını izole etmez.
+  const wrapTransform = placement === 'top' ? 'translate(-50%, -100%)' : 'translateX(-50%)'
 
   return (
     // Statik konum çıpası — burada transform ANİMASYONU YOK. Kritik: giriş
@@ -182,7 +179,7 @@ export function LocationPopup({
     // (Chromium davranışı). Bu yüzden animasyon aşağıda, backdrop-filter
     // taşıyan öğenin KENDİSİNDE.
     <div className="absolute" style={{ left: pos.x, top: pos.y }}>
-      <div ref={cardRef} className="relative" style={{ transform: 'translateX(-50%)' }}>
+      <div className="relative" style={{ transform: wrapTransform }}>
         <motion.div
           layout
           className="relative flex flex-col overflow-hidden"
@@ -214,7 +211,7 @@ export function LocationPopup({
             <p className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color }}>
               {kinds.map((k) => FACILITY_LABEL[k]).join(' & ')}
             </p>
-            <h3 className="mt-1 text-[19px] font-bold leading-tight tracking-tight text-white">
+            <h3 className="mt-1 text-[20px] font-bold leading-tight tracking-tight text-white">
               {location.name}
             </h3>
 

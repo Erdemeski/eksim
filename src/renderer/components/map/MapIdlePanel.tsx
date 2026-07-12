@@ -30,7 +30,7 @@ export function MapIdlePanel({ show }: MapIdlePanelProps): React.JSX.Element {
               Enerji ve Gıdada Geleceğin Mimarı
             </h2>
             <p className="mt-3 text-sm tracking-wide text-eksim-energy/90">
-              Bir tesise yaklaşın — keşfe başlayın
+              Bir tesise yaklaşın ve keşfe başlayın
             </p>
           </motion.div>
         )}

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
+import { AnimatePresence } from 'framer-motion'
 import { TurkeyMap } from './TurkeyMap'
 import { MapBackground } from './MapBackground'
 import { LightRays } from './LightRays'
@@ -9,11 +10,12 @@ import { MarkerRingsLayer } from './MarkerRingsLayer'
 import { ProvinceHighlight } from './ProvinceHighlight'
 import { PopupLayer, type DwellState } from './PopupLayer'
 import { MapIdlePanel } from './MapIdlePanel'
+import { ScreenSaver } from './ScreenSaver'
+import { ActiveVideoBanner } from './ActiveVideoBanner'
 import { NEIGHBOR_SUPPRESS, type MarkerVisualState } from './markerState'
 import { accentColor } from './SectorGraphics'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { BrandLogo } from '../brand/BrandLogo'
-import { IntroScreen } from '../intro/IntroScreen'
 import { useFigureTouch } from '../../hooks/useFigureTouch'
 import { useKioskStore } from '../../store/useKioskStore'
 import { ipcService } from '../../services/ipcService'
@@ -38,14 +40,21 @@ const LEAVE_GRACE_MS = 400
 const DWELL_SECONDS = 3
 /** Boşta önizleme döngüsünde her pinin gösterim süresi (ms). */
 const CYCLE_MS = 10000
+/** Hiçbir kullanıcı etkinliği (imleç/dokunuş/figür/aktivasyon) olmadan bu süre
+    geçince ekran koruyucu devreye girer. */
+const SCREENSAVER_MS = 90000
+/** Screen saver kapanışı / pin pasifleşmesi sonrası standby (10 sn'lik önizleme)
+    döngüsünün "kaldığı yerden" devam etmeden önce beklediği sessiz süre. */
+const STANDBY_RESUME_DELAY_MS = 3000
 
 /**
  * Monitör 1 — Türkiye SVG haritası deneyimi.
  *
- *  - Açılışta GSAP intro.
+ *  - Açılışta ekran koruyucu (çekim ekranı); dokununca canlı haritaya geçer.
  *  - figureTouch=false: pine imleç → 3 sn dwell (geri sayım popup'ta) → seçim.
  *  - figureTouch=true: fiziksel figür (3 nokta) touchMath ile anında seçer.
  *  - Boşta: pinler arasında sırayla dönen tanıtım popup'ları (PopupLayer).
+ *  - 90 sn hareketsizlik → tekrar ekran koruyucu.
  */
 export function MapScreen(): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -57,9 +66,13 @@ export function MapScreen(): React.JSX.Element {
   const activeLocation = useKioskStore((s) => s.activeLocation)
   const setActiveLocation = useKioskStore((s) => s.setActiveLocation)
   const setFigure = useKioskStore((s) => s.setFigure)
-  const [intro, setIntro] = useState(true)
+  // Ekran koruyucu açılışta AÇIK (çekim ekranı); dokununca kapanır.
+  const [screensaver, setScreensaver] = useState(true)
   const [dwell, setDwell] = useState<DwellState | null>(null)
   const [cycleIndex, setCycleIndex] = useState(0)
+  /** Son kullanıcı etkinliği zamanı (ms) — ekran koruyucu geri sayımı bunu okur
+      (her imleç hareketinde setState yapmamak için ref; render tetiklemez). */
+  const lastActivityRef = useRef(Date.now())
 
   const deactivate = useCallback(() => {
     window.clearTimeout(idleTimer.current)
@@ -177,18 +190,81 @@ export function MapScreen(): React.JSX.Element {
     []
   )
 
+  // Kullanıcı etkinliğini işaretle (ekran koruyucu geri sayımını sıfırlar).
+  const noteActivity = useCallback(() => {
+    lastActivityRef.current = Date.now()
+  }, [])
+
+  // Ham imleç/dokunuş etkinliği → lastActivity güncelle (setState YOK, ref).
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    el.addEventListener('pointermove', noteActivity)
+    el.addEventListener('pointerdown', noteActivity)
+    el.addEventListener('touchstart', noteActivity)
+    return () => {
+      el.removeEventListener('pointermove', noteActivity)
+      el.removeEventListener('pointerdown', noteActivity)
+      el.removeEventListener('touchstart', noteActivity)
+    }
+  }, [noteActivity])
+
+  // Aktivasyon/dwell (figür modu dahil gerçek etkileşim) de etkinlik sayılır.
+  useEffect(() => {
+    if (activeLocation || dwell) lastActivityRef.current = Date.now()
+  }, [activeLocation, dwell])
+
+  // Ekran koruyucu geri sayımı: harita canlıyken (screensaver=false) kendini
+  // yeniden zamanlayarak son etkinlikten SCREENSAVER_MS geçtiğinde devreye
+  // girer. lastActivity bir ref olduğundan imleç hareketi başına render yok.
+  useEffect(() => {
+    if (screensaver) return
+    let id: number
+    const tick = (): void => {
+      const idleFor = Date.now() - lastActivityRef.current
+      if (idleFor >= SCREENSAVER_MS) {
+        setScreensaver(true)
+        return
+      }
+      id = window.setTimeout(tick, SCREENSAVER_MS - idleFor)
+    }
+    id = window.setTimeout(tick, SCREENSAVER_MS)
+    return () => window.clearTimeout(id)
+  }, [screensaver])
+
+  const dismissScreensaver = useCallback(() => {
+    lastActivityRef.current = Date.now()
+    setScreensaver(false)
+  }, [])
+
   // Boşta önizleme döngüsü (10 sn'de bir sıradaki pin) — yalnız tamamen
   // boştayken döner. PopupLayer'a ve il boyama/baloncuk gizlemeye tek kaynak.
-  const idle = !activeLocation && !dwell && !intro
+  const idle = !activeLocation && !dwell && !screensaver
+
+  // "idle" YENİ başladığında (screen saver kapandı, pin pasifleşti veya dwell
+  // iptal oldu — hepsi aynı "boşta yeniden başlama" anı) standby döngüsü
+  // ANINDA başlamaz: 3 sn sessiz bekleme sonrası `cycleIndex`'in KALDIĞI
+  // YERDEN devam etmesi için hem görünürlük hem interval bu bayrakla kapılanır.
+  const [standbyReady, setStandbyReady] = useState(false)
   useEffect(() => {
-    if (!idle) return
+    if (!idle) {
+      setStandbyReady(false)
+      return
+    }
+    const id = window.setTimeout(() => setStandbyReady(true), STANDBY_RESUME_DELAY_MS)
+    return () => window.clearTimeout(id)
+  }, [idle])
+
+  useEffect(() => {
+    if (!idle || !standbyReady) return
     const id = window.setInterval(
       () => setCycleIndex((i) => (i + 1) % EKSIM_LOCATIONS.length),
       CYCLE_MS
     )
     return () => window.clearInterval(id)
-  }, [idle])
-  const previewLocation = idle ? EKSIM_LOCATIONS[cycleIndex % EKSIM_LOCATIONS.length] : null
+  }, [idle, standbyReady])
+  const previewLocation =
+    idle && standbyReady ? EKSIM_LOCATIONS[cycleIndex % EKSIM_LOCATIONS.length] : null
 
   // "Meşgul" pin: aktif > dwell(countdown) > idle-önizleme(preview). İlin
   // boyanmasına ve MagicRings'e tek kaynak.
@@ -201,11 +277,13 @@ export function MapScreen(): React.JSX.Element {
         ? 'preview'
         : null
 
-  // Birbirine çok yakın pin çiftleri: primary hover/standby'deyken (TAM
-  // aktivasyonda DEĞİL) komşusu tamamen gizlenir — üst üste binip primary'nin
-  // baloncuğunu/il boyamasını engellemesin diye.
-  const suppressedId =
-    engaged && engagedMode !== 'active' ? (NEIGHBOR_SUPPRESS[engaged.id] ?? null) : null
+  // Birbirine çok yakın pin çiftleri: primary meşgulken (preview/countdown/
+  // active FARK ETMEKSİZİN) komşusu tamamen gizlenir — üst üste binip
+  // primary'nin baloncuğunu/il boyamasını engellemesin diye. active modda da
+  // sürmesi kasıtlı: imleç primary pin üzerinde kaldığı sürece (aktivasyon
+  // sonrası dahi) komşu geri gelmemeli; imleç ayrılıp `engaged` değişince
+  // (veya null'a dönünce) bu değer de doğal olarak temizlenir.
+  const suppressedId = engaged ? (NEIGHBOR_SUPPRESS[engaged.id] ?? null) : null
 
   const markerStateFor = useCallback(
     (loc: EksimLocation): MarkerVisualState => {
@@ -229,22 +307,22 @@ export function MapScreen(): React.JSX.Element {
     >
       <BrandLogo />
 
-      {/* PERF: intro (drawMap) ekranı z-50'de tam opak kaplıyor; altındaki
-          parçacık döngüsünü ve EnergyGrid'i bu pencerede durdurmak görünürde
-          hiçbir şeyi değiştirmez ama açılıştaki en ağır CPU/GPU burst'ünü keser. */}
-      <MapBackground paused={!!activeLocation || intro} />
+      {/* PERF: ekran koruyucu z-60'ta tam opak kaplıyor; altındaki parçacık
+          döngüsünü ve EnergyGrid'i o pencerede durdurmak görünürde hiçbir şeyi
+          değiştirmez ama açılıştaki/boştaki en ağır CPU/GPU burst'ünü keser. */}
+      <MapBackground paused={!!activeLocation || screensaver} />
 
       <div className="absolute inset-0 z-10">
         <TurkeyMap svgRef={svgRef}>
           {/* Meşgul pinin ili — pin/bağların ALTINDA, uydu+neon sınırın üstünde. */}
-          {!intro && (
+          {!screensaver && (
             <ProvinceHighlight
               provinceId={engaged?.provinceId ?? null}
               color={engaged ? colorOf(engaged) : '#2EA6FF'}
             />
           )}
 
-          {!intro && <EnergyGrid locations={EKSIM_LOCATIONS} />}
+          {!screensaver && <EnergyGrid locations={EKSIM_LOCATIONS} />}
 
           {EKSIM_LOCATIONS.map((loc) => (
             <LocationMarker
@@ -260,13 +338,13 @@ export function MapScreen(): React.JSX.Element {
         </TurkeyMap>
       </div>
 
-      {/* Dwell/idle-önizlemede pinin çevresinde MagicRings — intro bitince BİR
-          KEZ mount edilir ve bir daha unmount EDİLMEZ (WebGL bağlamı kalıcı,
+      {/* Dwell/idle-önizlemede pinin çevresinde MagicRings — ekran koruyucu
+          kapanınca BİR KEZ mount edilir, bir daha unmount EDİLMEZ (WebGL kalıcı,
           görünürlük `location`/`paused` ile yönetilir — bkz. MarkerRingsLayer.tsx
           içindeki STABİLİTE notu). ErrorBoundary: WebGL tarafında beklenmedik
           bir hata olsa bile yalnız bu küçük katman düşer, tüm harita ekranı
           boşalmaz. */}
-      {!intro && (
+      {!screensaver && (
         <ErrorBoundary fallback={null}>
           <MarkerRingsLayer
             location={ringsLocation}
@@ -279,11 +357,16 @@ export function MapScreen(): React.JSX.Element {
 
       {/* Üstten yayılan ışık hüzmeleri (gerçek WebGL/ogl, bkz. LightRays.tsx).
           z-15: harita katmanının (z-10) ÜSTÜNDE, idle panel/popup'ın (z-20/30)
-          ALTINDA — pointer-events-none, etkileşimi etkilemez. Işıma pin aktifken
-          de SÜRER (kullanıcı isteği); yalnızca pencere gizliyken durur (bileşen
-          içindeki `document.hidden` koruması). */}
-      {!intro && (
-        <div className="pointer-events-none absolute inset-0 z-[15]">
+          ALTINDA — pointer-events-none, etkileşimi etkilemez. Bir pin AKTİFKEN
+          (video karşı ekranda oynarken) ActiveVideoBanner'a yer açmak için
+          yumuşakça soluklaşır + duraklar (GPU işi durur); pasifleşince geri
+          gelir. Sarmalayıcı ekran koruyucu kapanınca bir kez mount edilir, bir
+          daha unmount EDİLMEZ (yalnız opacity/paused ile yönetilir). */}
+      {!screensaver && (
+        <div
+          className="pointer-events-none absolute inset-0 z-[15]"
+          style={{ opacity: activeLocation ? 0 : 1, transition: 'opacity 0.5s ease' }}
+        >
           <LightRays
             raysOrigin="top-center"
             raysColor="#ffffff"
@@ -297,26 +380,36 @@ export function MapScreen(): React.JSX.Element {
             mouseInfluence={0.08}
             noiseAmount={0}
             distortion={0}
-            paused={false}
+            paused={screensaver || !!activeLocation}
           />
         </div>
       )}
+
+      {/* Pin aktifken (video karşı ekranda oynarken) üst-ortada bildirim +
+          Strands şeridi — LightRays ile karşılıklı yumuşak geçiş yapar (bkz.
+          ActiveVideoBanner.tsx). Ekran koruyucu kapanınca bir kez mount edilir,
+          bir daha unmount EDİLMEZ (WebGL kalıcı — bu turun kararlılık dersi). */}
+      {!screensaver && <ActiveVideoBanner active={!!activeLocation} />}
 
       {/* Pin popup katmanı (idle tanıtım + geri sayım + aktif detay). */}
       <PopupLayer
         activeLocation={activeLocation}
         dwell={dwell}
         previewLocation={previewLocation}
-        hidden={intro}
+        hidden={screensaver}
         svgRef={svgRef}
         containerRef={containerRef}
       />
 
       <div className="pointer-events-none absolute inset-0 z-20">
-        <MapIdlePanel show={!activeLocation && !intro} />
+        <MapIdlePanel show={!activeLocation && !screensaver} />
       </div>
 
-      {intro && <IntroScreen drawMap onDone={() => setIntro(false)} />}
+      {/* Ekran koruyucu (yalnız map penceresi) — açılışta + 90 sn hareketsizlikte.
+          AnimatePresence ile giriş/çıkış animasyonlu; dokununca canlı haritaya. */}
+      <AnimatePresence>
+        {screensaver && <ScreenSaver key="ss" onDismiss={dismissScreensaver} />}
+      </AnimatePresence>
     </div>
   )
 }

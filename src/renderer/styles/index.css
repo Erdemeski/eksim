@@ -102,6 +102,19 @@ body,
   50% { transform: translateY(-2.6px); }
 }
 
+/* Marker rings (MagicRings) baloncukla KİLİTLİ süzülme. Baloncuğun bobu viewBox
+   biriminde; rings ekran-uzayında olduğundan genlik `--rings-bob` ile px olarak
+   verilir (MarkerRingsLayer, CTM ölçeğinden hesaplar) + aynı 3.6s periyot / aynı
+   ease / eşleşen animation-delay → rings ve baloncuk aynı fazda bobar, kopmaz. */
+.eksim-rings-float {
+  animation: eksim-rings-float 3.6s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes eksim-rings-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(calc(var(--rings-bob, 3px) * -1)); }
+}
+
 /* Hover/önizlemede boyanan il alanının yumuşak nefesi (yalnız opacity —
    filtre yok, raster statik kalır). */
 .eksim-province-breathe {
@@ -167,6 +180,7 @@ body,
   .eg-base,
   .eg-city,
   .eksim-bubble-float,
+  .eksim-rings-float,
   .eksim-province-breathe,
   .eksim-aurora,
   .eksim-light-rays__beam {

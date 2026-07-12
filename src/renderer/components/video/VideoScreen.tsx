@@ -16,10 +16,20 @@ const SECTOR_ACCENT: Record<EksimLocation['sector'], string> = {
   food: 'text-eksim-food'
 }
 
-/** Reveal (clipPath maske) hedef durumları — mevcut premium geçişle birebir. */
-const CLOSED = { clipPath: 'inset(100% 0% 0% 0%)', opacity: 0.4, scale: 1.05 }
-const OPEN = { clipPath: 'inset(0% 0% 0% 0%)', opacity: 1, scale: 1 }
-const REVEAL_TRANSITION = { duration: 0.6, ease: [0.22, 1, 0.36, 1] as const }
+/**
+ * Reveal hedef durumları — SALT opacity (clip-path/scale KASITLI OLARAK YOK).
+ * Önceki sürüm bir clipPath "wipe" ile açılıyordu; animasyonlu clip-path,
+ * Chromium'un video elemanına verdiği donanım overlay'ini (Windows
+ * DirectComposition) geçiş süresince devre dışı bırakıp GPU doku
+ * compositing'ine düşürüyordu — hem videonun kendisinde kare düşüşüne
+ * (takılma) hem de ÜSTÜNDEKİ gradient scrim'in overlay↔normal compositing
+ * arası geçiş anında bir-iki kare "bozulmasına" yol açıyordu (ikisi de aynı
+ * kök neden). Salt opacity crossfade, overlay'i bozmadan salt alfa blend ile
+ * çalışır — en ucuz ve en kararlı geçiş.
+ */
+const CLOSED = { opacity: 0 }
+const OPEN = { opacity: 1 }
+const REVEAL_TRANSITION = { duration: 0.5, ease: [0.22, 1, 0.36, 1] as const }
 /** loadeddata gelmezse (ör. hata) reveal'ı tetikleyen güvenlik süresi (ms). */
 const LOAD_SAFETY_MS = 1200
 
@@ -32,8 +42,9 @@ const LOAD_SAFETY_MS = 1200
  *   1) Arka (görünmez) slota kaynak atanır, `load()` çağrılır ve ilk kare
  *      hazır olana kadar (`loadeddata`) BEKLENİR — böylece reveal, DECODE
  *      gecikmesiyle çakışmaz (eski davranışta videonun ilk ~1 sn'si donuyordu).
- *   2) Hazır olunca premium clipPath reveal oynatılır; biterken eski slot
- *      duraklatılır (çift-decode penceresi kısalır).
+ *   2) Hazır olunca salt-opacity crossfade oynatılır (bkz. CLOSED/OPEN
+ *      tanımındaki not — clip-path/scale KASITLI kullanılmaz); biterken eski
+ *      slot duraklatılır (çift-decode penceresi kısalır).
  * Eleman create/destroy churn'ü ve fallback'e dönüşteki yeniden-yükleme böylece
  * ortadan kalkar. Aynı kaynağa "geçiş" no-op'tur.
  */
@@ -125,7 +136,9 @@ export function VideoScreen(): React.JSX.Element {
       const fc = getControls(front)
       const frontVideo = getVideo(front)
 
-      // Gelen slot kapalı ve ÜSTTE; eski slot altta görünür kalır (üzerine wipe).
+      // Gelen slot görünmez ve ÜSTTE; eski slot altta tam opak kalır — yalnız
+      // gelen slotun opacity'si 0→1 artarken üzerine karışır (salt alfa blend,
+      // donanım overlay'i bozmaz).
       bc.set({ ...CLOSED, zIndex: 2 })
       fc.set({ zIndex: 1 })
       try {
@@ -142,11 +155,7 @@ export function VideoScreen(): React.JSX.Element {
       frontRef.current = back
       if (frontVideo) frontVideo.pause()
       fc.set({ opacity: 0, zIndex: 1 })
-      // Donanım overlay temizliği: Framer'ın kendi set() kullanılır — inline
-      // style yazmak Framer Motion'ın iç durumunu bozar ve sonraki animate
-      // çağrılarını kırar. clipPath'i 'none' yaparak GPU compositing
-      // katmanını serbest bırakıyoruz (artık wipe efekti yok).
-      bc.set({ clipPath: 'none', scale: 1, opacity: 1, zIndex: 2 })
+      bc.set({ opacity: 1, zIndex: 2 })
     }
 
     // Arka slotta hedef zaten yüklüyse (ör. remote→fallback dönüşü) tekrar yükleme.
@@ -244,12 +253,15 @@ export function VideoScreen(): React.JSX.Element {
         }}
       />
 
-      {/* Tesis bilgisi overlay'i — sağ-alta hizalı (Framer Motion ile girer/çıkar). */}
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-end p-10 md:p-14"
-        style={{ zIndex: 4 }}
-      >
-        <AnimatePresence mode="wait">
+      {/* Tesis bilgisi overlay'i — sağ-alta hizalı. PERF: her iki varyant da
+          MUTLAK konumlanır (aynı sağ-alt çıpa, `flex justify-end` akış
+          düzeni DEĞİL) — `mode="wait"` de KALDIRILDI, exit/enter video
+          crossfade'iyle (0.5s) SENKRON ve ÜST ÜSTE biner. Bunlar olmadan
+          (flex normal-akış çocukları + sıralı exit-sonra-enter) tam video
+          geçişi anında ek bir flex reflow + 2× uzun animasyon penceresi
+          oluşuyordu — takılmaya katkısı olan ikinci kaynaktı. */}
+      <div className="pointer-events-none absolute inset-0" style={{ zIndex: 4 }}>
+        <AnimatePresence>
           {activeLocation ? (
             <motion.div
               key={activeLocation.id}
@@ -258,8 +270,8 @@ export function VideoScreen(): React.JSX.Element {
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 18 }}
-              transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-              className="ml-auto max-w-xl text-right [text-shadow:0_2px_16px_rgba(0,0,0,0.85)]"
+              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute bottom-10 right-10 max-w-xl text-right [text-shadow:0_2px_16px_rgba(0,0,0,0.85)] md:bottom-14 md:right-14"
             >
               <p
                 className={`text-sm font-semibold uppercase tracking-[0.4em] ${SECTOR_ACCENT[activeLocation.sector]}`}
@@ -279,8 +291,8 @@ export function VideoScreen(): React.JSX.Element {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.6 }}
-              className="ml-auto max-w-xl text-right [text-shadow:0_2px_16px_rgba(0,0,0,0.85)]"
+              transition={{ duration: 0.5 }}
+              className="absolute bottom-10 right-10 max-w-xl text-right [text-shadow:0_2px_16px_rgba(0,0,0,0.85)] md:bottom-14 md:right-14"
             >
               <p className="text-sm font-semibold uppercase tracking-[0.5em] text-eksim-glow/80">
                 Eksim Holding

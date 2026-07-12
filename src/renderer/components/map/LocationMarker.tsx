@@ -34,7 +34,7 @@ function bubbleGif(kinds: FacilityKind[]): string {
   return windGif
 }
 
-/** Görsel durum → ölçek (baloncuk boyutu). preview'da küçülür ama kaybolmaz. */
+/** Görsel durum → ölçek (baloncuk boyutu). preview/countdown'da küçülür ama kaybolmaz. */
 function scaleFor(state: MarkerVisualState, hovering: boolean): number {
   switch (state) {
     case 'preview':
@@ -43,7 +43,8 @@ function scaleFor(state: MarkerVisualState, hovering: boolean): number {
     case 'suppressed':
       return 0.4
     case 'countdown':
-      return 1
+      // Geri sayım boyunca baloncuk %90 küçülür (kaybolmaz) — MagicRings öne çıkar.
+      return 0.85
     default:
       return hovering ? 1.1 : 1
   }
@@ -56,8 +57,8 @@ function scaleFor(state: MarkerVisualState, hovering: boolean): number {
  *    beyaz daire; içinde türe göre animasyonlu GIF ikon. GIF, SVG `<image>`
  *    Chromium'da animasyon oynatmadığı için `<foreignObject>` + `<img>` ile çizilir.
  *  - Hover: daire hafif büyür + parlar (davetkarlık).
- *  - countdown (dwell, 3 sn): baloncuk KAYBOLMAZ, tam boyda kalır — çevresinde
- *    MagicRings efekti MarkerRingsLayer tarafından ayrıca çizilir.
+ *  - countdown (dwell, 3 sn): baloncuk %90 küçülür (KAYBOLMAZ) — çevresinde
+ *    MagicRings efekti MarkerRingsLayer tarafından ayrıca çizilir ve öne çıkar.
  *  - preview (idle 10 sn önizleme): baloncuk küçülür (KAYBOLMAZ) + MagicRings.
  *  - active (seçim tamamlandı): baloncuk tamamen kaybolur, il boyanır.
  *  - suppressed (yakın komşu pin bilerek gizlenmiş): tamamen kaybolur.

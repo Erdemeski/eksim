@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useState } from 'react'
 import { AnimatePresence } from 'framer-motion'
-import type { EksimLocation, Point } from '@shared/types'
+import type { EksimLocation } from '@shared/types'
 import { viewBoxToScreen } from '../../services/svgMapService'
 import { TR_PROVINCES } from './trProvinces'
 import { accentColor } from './SectorGraphics'
@@ -21,16 +21,23 @@ interface PopupLayerProps {
    * gizlemeyle aynı kaynak; yalnız tamamen boştayken non-null gelir).
    */
   previewLocation: EksimLocation | null
-  /** Popup katmanı gizli olmalı mı (ör. intro). */
+  /** Popup katmanı gizli olmalı mı (ör. screen saver). */
   hidden?: boolean
   svgRef: React.RefObject<SVGSVGElement | null>
   containerRef: React.RefObject<HTMLElement | null>
 }
 
-/** İlin alt kenarı ile kart arası dikey boşluk (px). */
+/** İl kenarı ile kart arası dikey boşluk (px). */
 const PROVINCE_GAP = 28
-/** Görünür alan kenar payı (px) — kart pencere dışına taşmasın. */
+/** Görünür alan yatay kenar payı (px) — kart pencere dışına taşmasın. */
 const EDGE_PAD = 20
+/**
+ * En yüksek aktif kartın MUHAFAZAKÂR yükseklik tahmini (px). CANLI ÖLÇÜM DEĞİL
+ * — yalnız "alta koyarsam taşar mı?" kararı için sabit eşik. Ölçüm-bağımsız
+ * olması kritik: eski canlı-ölçüm + Y-clamp geri beslemesi güney illerinde
+ * "Maximum update depth" ile map penceresini çökertiyordu (bkz. plan).
+ */
+const EST_CARD_H = 360
 
 interface Resolved {
   location: EksimLocation
@@ -48,19 +55,15 @@ function cardWidth(mode: PopupMode): number {
  * Pin popup orkestratörü. Durum önceliği: active > countdown(dwell) > preview
  * (idle döngüsü MapScreen'de — buraya previewLocation olarak gelir).
  *
- * Konumlama: kart artık PİNE değil, pinin bulunduğu İLİN sınırının ALT
- * KENARINA hizalanır (bazı iller pinin hemen altında kalıp kartı taşırıyordu).
- * İki aşamalı:
- *  (1) İl bbox'ının alt-orta noktası ekrana projelenir + yatayda kart
- *      genişliğine göre KESİN clamp (genişlik moda göre sabit, tam hesaplanır).
- *  (2) `LocationPopup` kendi gerçek yüksekliğini (offsetHeight — transform/scale
- *      animasyonundan ETKİLENMEZ) `onMeasure` ile bildirir; dikeyde konteyner
- *      taşmasın diye burada ikinci bir clamp uygulanır. Ölçüm id'li bildirilir
- *      ve yalnız GÜNCEL hedefinki uygulanır — AnimatePresence çıkış/giriş
- *      geçişinde eski ve yeni kart aynı anda DOM'dayken paylaşılan bir ref'in
- *      yanlış (çıkan) karta bağlı kalma riskini ortadan kaldırır.
- * İkisi de useLayoutEffect/senkron state güncellemesiyle boyamadan ÖNCE
- * uygulanır → görünür sıçrama olmaz.
+ * Konumlama: kart, pinin bulunduğu İLİN sınır kutusuna (bbox) göre hizalanır
+ * (pine değil — bazı iller pinin hemen altında kalıp kartı taşırıyordu).
+ * ÖLÇÜMSÜZ üst/alt yerleşim:
+ *  - İl ALT kenarı ekranın altına yakınsa (alta koyulursa taşacaksa) kart
+ *    ilin ÜST kenarına, `placement='top'` ile (CSS translateY(-100%)) açılır.
+ *  - Değilse il ALT kenarına, `placement='bottom'`.
+ *  - Yatayda kart genişliğine göre kesin clamp (sabit genişlik → ölçümsüz).
+ * Hiçbir yerde kartın gerçek yüksekliği JS ile OKUNMAZ → çocuk→ebeveyn
+ * setState geri besleme döngüsü (eski çökme kaynağı) yapısal olarak yok.
  */
 export function PopupLayer({
   activeLocation,
@@ -70,8 +73,9 @@ export function PopupLayer({
   svgRef,
   containerRef
 }: PopupLayerProps): React.JSX.Element | null {
-  const rawAnchorRef = useRef<{ x: number; y: number } | null>(null)
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const [placed, setPlaced] = useState<{ x: number; y: number; placement: 'top' | 'bottom' } | null>(
+    null
+  )
   const [resizeNonce, setResizeNonce] = useState(0)
 
   // Pencere yeniden boyutlanınca konumu tazele.
@@ -101,66 +105,56 @@ export function PopupLayer({
   const targetId = resolved?.location.id ?? null
   const provinceId = resolved?.location.provinceId ?? null
 
-  // Faz 1: İlin ALT KENARININ ortasına göre ham çıpa (Y henüz yükseklik-clamp'siz) + yatay clamp.
+  // TEK geçiş: il bbox'ından ölçümsüz {x, y, placement}. Mod (preview/countdown/
+  // active) bilerek bağımlılık DEĞİL → aynı pinde büyürken kart kaymaz.
   useLayoutEffect(() => {
     const svg = svgRef.current
     const container = containerRef.current
     if (!resolved || !svg || !container || !provinceId) {
-      rawAnchorRef.current = null
-      setPos(null)
+      setPlaced(null)
       return
     }
     const province = TR_PROVINCES[provinceId]
     if (!province) {
-      rawAnchorRef.current = null
-      setPos(null)
+      setPlaced(null)
       return
     }
-    const bottomCenter: Point = {
-      x: province.bbox.x + province.bbox.width / 2,
-      y: province.bbox.y + province.bbox.height
-    }
-    const screen = viewBoxToScreen(svg, bottomCenter)
-    if (!screen) return
+    const { bbox } = province
+    const cx = bbox.x + bbox.width / 2
+    const topScreen = viewBoxToScreen(svg, { x: cx, y: bbox.y })
+    const bottomScreen = viewBoxToScreen(svg, { x: cx, y: bbox.y + bbox.height })
+    if (!topScreen || !bottomScreen) return
     const rect = container.getBoundingClientRect()
-    const width = cardWidth(resolved.mode)
-    const halfW = width / 2 + EDGE_PAD
-    const rawX = screen.x - rect.left
-    const rawY = screen.y - rect.top + PROVINCE_GAP
+
+    // Alta koyulursa (il alt kenarı + boşluk + tahmini kart) ekranı taşar mı?
+    const bottomY = bottomScreen.y - rect.top
+    const overflowsBelow = bottomY + PROVINCE_GAP + EST_CARD_H > rect.height - EDGE_PAD
+    const placement: 'top' | 'bottom' = overflowsBelow ? 'top' : 'bottom'
+
+    const anchorScreen = placement === 'top' ? topScreen : bottomScreen
+    const rawX = anchorScreen.x - rect.left
+    const rawY =
+      placement === 'top'
+        ? anchorScreen.y - rect.top - PROVINCE_GAP
+        : anchorScreen.y - rect.top + PROVINCE_GAP
+
+    const halfW = cardWidth(resolved.mode) / 2 + EDGE_PAD
     const clampedX = Math.min(Math.max(rawX, halfW), Math.max(halfW, rect.width - halfW))
-    rawAnchorRef.current = { x: clampedX, y: rawY }
-    setPos({ x: clampedX, y: rawY })
-    // resolved.mode/secondsLeft/progress kasıtlı bağımlılık DEĞİL — yalnız
-    // hedef/il/resize değişince yeniden hesaplanır (aynı pinde büyürken kaymaz).
+
+    setPlaced({ x: clampedX, y: rawY, placement })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetId, provinceId, resizeNonce, svgRef, containerRef])
 
-  // Faz 2: LocationPopup kendi gerçek yüksekliğini bildirdikçe (mod/içerik
-  // değiştikçe tekrar tetiklenir) dikey konumu konteyner sınırları içinde tutar.
-  const handleMeasure = useCallback(
-    (locationId: string, height: number) => {
-      if (locationId !== targetId) return // bayat/çıkan kartın ölçümünü yok say
-      const anchor = rawAnchorRef.current
-      const container = containerRef.current
-      if (!anchor || !container) return
-      const containerH = container.getBoundingClientRect().height
-      const maxY = containerH - EDGE_PAD - height
-      const clampedY = Math.min(anchor.y, Math.max(EDGE_PAD, maxY))
-      setPos((p) => (p && Math.abs(p.y - clampedY) > 0.5 ? { x: p.x, y: clampedY } : p))
-    },
-    [targetId, containerRef]
-  )
-
-  // z-30: harita (z-10) ve idle panel (z-20) ÜSTÜNDE, logo (z-40)/intro (z-50)
-  // altında. pointer-events-none → harita hover etkileşimi bozulmaz.
+  // z-30: harita (z-10) ve idle panel (z-20) ÜSTÜNDE, logo (z-40) altında.
+  // pointer-events-none → harita hover etkileşimi bozulmaz.
   return (
     <div className="pointer-events-none absolute inset-0 z-30">
       <AnimatePresence>
-        {resolved && pos && (
+        {resolved && placed && (
           <LocationPopup
             key={resolved.location.id}
-            onMeasure={handleMeasure}
-            pos={pos}
+            pos={{ x: placed.x, y: placed.y }}
+            placement={placed.placement}
             mode={resolved.mode}
             location={resolved.location}
             kinds={resolved.location.kinds}

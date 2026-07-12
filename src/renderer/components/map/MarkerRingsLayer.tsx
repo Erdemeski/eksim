@@ -29,6 +29,13 @@ const RING_BOX = 132
  * yokken tüm pencereyi boşaltan bir React unmount'una) yol açtığı gözlendi.
  * Tek kalıcı bağlam bu riski tamamen ortadan kaldırır.
  */
+/**
+ * Pin baloncuğunun süzülme genliği (bkz. index.css `eksim-bubble-float` →
+ * translateY -2.6, viewBox birimi). Rings ekran-uzayında olduğundan bu genlik
+ * CTM ölçeğiyle piksele çevrilir ki rings ile baloncuk BİREBİR aynı fazda bobsun.
+ */
+const BUBBLE_BOB_VB = 2.6
+
 export function MarkerRingsLayer({
   location,
   color,
@@ -36,6 +43,8 @@ export function MarkerRingsLayer({
   containerRef
 }: MarkerRingsLayerProps): React.JSX.Element {
   const [pos, setPos] = useState<Point>({ x: -9999, y: -9999 })
+  // Baloncuğun süzülme genliğinin EKRAN-uzayı karşılığı (px) — CTM ölçeğinden.
+  const [bobPx, setBobPx] = useState(3)
   const [resizeNonce, setResizeNonce] = useState(0)
 
   useEffect(() => {
@@ -51,25 +60,40 @@ export function MarkerRingsLayer({
     // (opacity:0) önemsiz, ve son bilinen konumda kalması bir sonraki
     // gösterimde konum sıçramasını önler.
     if (!location || !svg || !container) return
-    const screen = viewBoxToScreen(svg, locationToViewBox(location))
-    if (!screen) return
+    const vb = locationToViewBox(location)
+    const screen = viewBoxToScreen(svg, vb)
+    // 1 viewBox biriminin ekran-uzayı karşılığı (dikey ölçek) → bob px'i.
+    const screen1 = viewBoxToScreen(svg, { x: vb.x, y: vb.y + 1 })
+    if (!screen || !screen1) return
     const rect = container.getBoundingClientRect()
     setPos({ x: screen.x - rect.left, y: screen.y - rect.top })
+    setBobPx(Math.abs(screen1.y - screen.y) * BUBBLE_BOB_VB)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location?.id, resizeNonce, svgRef, containerRef])
 
   const active = !!location
+  // Baloncukla AYNI faz kayması (LocationMarker'daki floatDelay ile birebir):
+  // aynı pin `point`'i → aynı gecikme → rings ve baloncuk kilitli bobar.
+  const floatDelay = location
+    ? -(((): number => {
+        const p = locationToViewBox(location)
+        return (p.x + p.y) % 3.6
+      })())
+    : 0
 
   return (
     <div
-      className="pointer-events-none absolute z-[16]"
+      className="pointer-events-none absolute z-[16] eksim-rings-float"
       style={{
         left: pos.x - RING_BOX / 2,
         top: pos.y - RING_BOX / 2,
         width: RING_BOX,
         height: RING_BOX,
         opacity: active ? 1 : 0,
-        transition: 'opacity 0.3s ease'
+        transition: 'opacity 0.3s ease',
+        animationDelay: `${floatDelay}s`,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ['--rings-bob' as any]: `${bobPx}px`
       }}
     >
       <MagicRings
