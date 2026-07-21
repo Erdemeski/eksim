@@ -6,6 +6,8 @@ import ShinyText from './ShinyText'
 interface ActiveVideoBannerProps {
   /** Bir pin aktif mi (videosu Monitör 2'de oynuyor mu). */
   active: boolean
+  /** Strands ışıma çarpanı (tier'dan; düşük donanımda hafifletilir). */
+  glowScale?: number
 }
 
 /**
@@ -25,7 +27,10 @@ interface ActiveVideoBannerProps {
  * ortalama çevirisini siler) → banner merkezden sağa kaymış görünürdü. Bu
  * yüzden dikey giriş/çıkış animasyonu AYRI bir iç `motion.div`'de.
  */
-export function ActiveVideoBanner({ active }: ActiveVideoBannerProps): React.JSX.Element {
+export function ActiveVideoBanner({
+  active,
+  glowScale = 1
+}: ActiveVideoBannerProps): React.JSX.Element {
   return (
     <div className="pointer-events-none absolute left-1/2 top-8 z-[18] -translate-x-1/2">
       <motion.div
@@ -58,7 +63,7 @@ export function ActiveVideoBanner({ active }: ActiveVideoBannerProps): React.JSX
             amplitude={0.3}
             waviness={0.6}
             thickness={0.4}
-            glow={0.8}
+            glow={0.8 * glowScale}
             taper={2}
             spread={3}
             intensity={0.8}

@@ -243,13 +243,25 @@ export function VideoScreen(): React.JSX.Element {
       <BrandLogo />
 
       {/* Güçlü scrim — parlak videolarda bile metin okunur. Alt band + sağ-alt
-          köşede ekstra karartma (metin oraya yaslı). */}
+          köşede ekstra karartma (metin oraya yaslı).
+          TEK KARARTMA KATMANI (kasıtlı): okunabilirlik SADECE bu statik, hiç
+          unmount olmayan div'den gelir. Önceki sürümde her iki metin
+          motion.div'i (aşağıda) KENDİ `text-shadow`'unu taşıyordu; konum
+          geçişinde (dwell tamamlanınca) AnimatePresence senkron modda eski ve
+          yeni metni video crossfade'iyle aynı 0.5s'te BİLEREK üst üste
+          bindirdiğinden (bkz. aşağıdaki not), iki farklı metin bloğunun iki
+          ayrı gölgesi o kısa pencerede üst üste binip "çift karartma" gibi
+          görünüyordu — geçiş bitip tek metin kalınca normale dönüyordu. Metin
+          gölgesi kaldırıldı, bu scrim'in radial bileşeni (tam metnin oturduğu
+          sağ-alt köşe) hafifçe güçlendirildi ki okunabilirlik en az öncekiyle
+          eşdeğer kalsın — video crossfade'in kendisine (controls0/controls1,
+          zamanlama) DOKUNULMADI. */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
           zIndex: 3,
           background:
-            'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.5) 20%, transparent 46%), radial-gradient(95% 65% at 100% 100%, rgba(0,0,0,0.6), transparent 60%)'
+            'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.5) 20%, transparent 46%), radial-gradient(95% 65% at 100% 100%, rgba(0,0,0,0.72), transparent 60%)'
         }}
       />
 
@@ -271,7 +283,7 @@ export function VideoScreen(): React.JSX.Element {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 18 }}
               transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute bottom-10 right-10 max-w-xl text-right [text-shadow:0_2px_16px_rgba(0,0,0,0.85)] md:bottom-14 md:right-14"
+              className="absolute bottom-10 right-10 max-w-xl text-right md:bottom-14 md:right-14"
             >
               <p
                 className={`text-sm font-semibold uppercase tracking-[0.4em] ${SECTOR_ACCENT[activeLocation.sector]}`}
@@ -292,7 +304,7 @@ export function VideoScreen(): React.JSX.Element {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.5 }}
-              className="absolute bottom-10 right-10 max-w-xl text-right [text-shadow:0_2px_16px_rgba(0,0,0,0.85)] md:bottom-14 md:right-14"
+              className="absolute bottom-10 right-10 max-w-xl text-right md:bottom-14 md:right-14"
             >
               <p className="text-sm font-semibold uppercase tracking-[0.5em] text-eksim-glow/80">
                 Eksim Holding

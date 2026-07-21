@@ -3,11 +3,15 @@ import { motion } from 'framer-motion'
 import { TURKEY_PATH_D, MAP_VIEWBOX } from './turkeyGeometry'
 import { SilkBackground } from './SilkBackground'
 import ShinyText from './ShinyText'
-import logoUrl from '../../assets/eksim_logo.jpg'
+import logoUrl from '../../assets/eksim40yil.png'
 
 interface ScreenSaverProps {
   /** Ekrana dokununca (pointer down) çağrılır — canlı haritaya geçer. */
   onDismiss: () => void
+  /** Silk WebGL arka planının hedef fps'i (tier'dan). */
+  effectFps?: number
+  /** Silk WebGL arka planının DPR tavanı (tier'dan). */
+  effectDpr?: number
 }
 
 /**
@@ -21,7 +25,11 @@ interface ScreenSaverProps {
  * Giriş/çıkış AnimatePresence ile MapScreen'de sarmalanır (opacity + hafif
  * scale). `z-[60]` → logo/popup dahil her şeyin üstünde.
  */
-export function ScreenSaver({ onDismiss }: ScreenSaverProps): React.JSX.Element {
+export function ScreenSaver({
+  onDismiss,
+  effectFps = 30,
+  effectDpr = 2
+}: ScreenSaverProps): React.JSX.Element {
   return (
     <motion.div
       key="screensaver"
@@ -34,7 +42,15 @@ export function ScreenSaver({ onDismiss }: ScreenSaverProps): React.JSX.Element 
     >
       {/* 1) Silk WebGL arka plan (marka lacivert tonu). */}
       <div className="absolute inset-0">
-        <SilkBackground speed={3.4} scale={1} color="#1b2b4b" noiseIntensity={1.4} rotation={0} />
+        <SilkBackground
+          speed={3.4}
+          scale={1}
+          color="#1b2b4b"
+          noiseIntensity={1.4}
+          rotation={0}
+          fps={effectFps}
+          maxDpr={effectDpr}
+        />
       </div>
 
       {/* 2) Kontrast scrim — silüet/metin okunur kalsın. */}
@@ -62,13 +78,15 @@ export function ScreenSaver({ onDismiss }: ScreenSaverProps): React.JSX.Element 
         <path d={TURKEY_PATH_D} fill="#ffffff" opacity="0.92" />
       </svg>
 
-      {/* 4+5) Ortada logo, altında efektli çağrı metni + dokunma ikonu. */}
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-8">
+      {/* 4+5) Ortada logo (40.yıl amblemi, şeffaf PNG — kart/beyaz zemin yok,
+          doğrudan Silk arka plan üzerine oturur), altında efektli çağrı metni +
+          dokunma ikonu. */}
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2">
         <motion.img
           src={logoUrl}
           alt="Eksim Holding"
           draggable={false}
-          className="h-40 w-auto select-none rounded-2xl bg-white/95 p-3 shadow-2xl ring-1 ring-black/10"
+          className="h-40 w-auto select-none "
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}

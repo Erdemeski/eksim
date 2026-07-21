@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannel } from '../shared/ipc-channels'
 import { WINDOW_ROLE_ARG } from '../shared/types'
 import type { EksimBridge, FigureEventPayload, WindowRole } from '../shared/types'
+import { DEFAULT_PERF_TIER, PERF_TIER_ARG, type PerfTier } from '../shared/perf'
 
 /**
  * Güvenli köprü: Electron main ile React arasındaki TEK temas yüzeyi.
@@ -19,8 +20,19 @@ function resolveRole(): WindowRole {
   return window.location.pathname.includes('video') ? 'video' : 'map'
 }
 
+/** Kalite katmanını main'in geçtiği argümandan türet; yoksa güvenli varsayılan. */
+function resolvePerfTier(): PerfTier {
+  const arg = process.argv.find((a) => a.startsWith(PERF_TIER_ARG))
+  if (arg) {
+    const value = arg.slice(PERF_TIER_ARG.length)
+    if (value === 'high' || value === 'low') return value
+  }
+  return DEFAULT_PERF_TIER
+}
+
 const bridge: EksimBridge = {
   getWindowRole: () => resolveRole(),
+  getPerfTier: () => resolvePerfTier(),
 
   emitFigure: (event: FigureEventPayload) => {
     ipcRenderer.send(IpcChannel.FIGURE_UPDATE, event)

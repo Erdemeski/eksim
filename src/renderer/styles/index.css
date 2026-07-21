@@ -171,6 +171,23 @@ body,
   to { opacity: 1; }
 }
 
+/* ---- Pin sprite-sheet animasyonu (17 canlı GIF decode'unun yerine) ----
+ *
+ * PERF: Her tür için tek yatay sprite PNG (ffmpeg ile GIF karelerinden). İç şerit
+ * sprite'ın tamamı kadar geniştir; `translateX 0 → -100%` + `steps(N)` ile kare
+ * kare kayar. translateX compositor-only, sprite bir kez decode edilir ve aynı
+ * türdeki tüm pinlerce paylaşılır — 17 eşzamanlı GIF decoder'ı ortadan kalkar.
+ * Süre/`steps(N)` inline verilir (LocationMarker.tsx, tür başına). */
+.eksim-sprite-strip {
+  animation-name: eksim-sprite;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+@keyframes eksim-sprite {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
 /* LightRays artık gerçek WebGL (ogl) ile render ediliyor — bkz. LightRays.tsx.
    CSS-only deneme buradan kaldırıldı. */
 
@@ -183,6 +200,7 @@ body,
   .eksim-rings-float,
   .eksim-province-breathe,
   .eksim-aurora,
+  .eksim-sprite-strip,
   .eksim-light-rays__beam {
     animation: none;
   }

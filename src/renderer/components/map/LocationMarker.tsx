@@ -1,10 +1,10 @@
 import React, { useState } from 'react'
 import type { EksimLocation, FacilityKind, Point } from '@shared/types'
 import type { MarkerVisualState } from './markerState'
-import windGif from '../../assets/wind.gif'
-import solarGif from '../../assets/solar-panel.gif'
-import hydroGif from '../../assets/hydro.gif'
-import windAndPanelGif from '../../assets/wind-and-panel.gif'
+import windSprite from '../../assets/wind-sprite.png'
+import solarSprite from '../../assets/solar-sprite.png'
+import hydroSprite from '../../assets/hydro-sprite.png'
+import windAndPanelSprite from '../../assets/wind-and-panel-sprite.png'
 
 interface LocationMarkerProps {
   location: EksimLocation
@@ -23,15 +23,52 @@ interface LocationMarkerProps {
 const BUBBLE = 38
 
 /**
- * Santral türlerine göre baloncuk GIF'i:
- * yalnız rüzgar → wind.gif; yalnız güneş → solar-panel.gif; yalnız hidro →
- * hydro.gif; rüzgar+güneş hibrit → wind-and-panel.gif.
+ * PERF (kritik — 17 eşzamanlı GIF decode'unu ortadan kaldırır): Her tür için
+ * animasyonlu GIF yerine tek yatay **sprite-sheet PNG** kullanılır (ffmpeg ile
+ * GIF karelerinden üretildi; her hücre 75×75). Aynı türdeki tüm pinler AYNI
+ * sprite URL'ini paylaşır → görsel yalnız BİR KEZ decode edilir; animasyon CSS
+ * `steps()` + `transform: translateX` (compositor-only) ile döner. Eski davranış
+ * 17 canlı GIF decoder'ı (~8 MB frame buffer) aynı anda çalıştırıyordu — zayıf
+ * kiosk PC'sindeki asıl CPU/RAM yüküydü. Görünüm birebir korunur.
+ *
+ * Kare hızı **30fps** hedeflenerek üretildi (uygulamanın geri kalanındaki
+ * ambient efekt bütçesiyle aynı — bkz. shared/perf.ts, LightRays/GSAP 30fps).
+ * İlk sürümde stride-3 örnekleme (~17fps) belirgin şekilde kesikli/takılmalı
+ * görünüyordu (özellikle rüzgar türbini pervanesinin dönüşünde); 30fps'e
+ * çıkarmak akıcılığı orijinal GIF'e (50fps) çok yaklaştırırken, tek satırlık
+ * sprite genişliğini GPU doku boyutu güvenli sınırının (D3D10 sınıfı donanımda
+ * garanti 8192px) altında tutuyor (en geniş sprite 8100px). Hücre boyutu 96'dan
+ * 75'e küçültüldü ki daha çok kare bu bütçeye sığsın — basit çizgi ikonlarda
+ * gözle fark edilmez.
+ *
+ * `frames`/`duration`, sprite'lar üretilirken ÖLÇÜLEN değerlerdir (ffprobe);
+ * sprite'lar yenilenirse burası da güncellenmeli.
  */
-function bubbleGif(kinds: FacilityKind[]): string {
-  if (kinds.includes('wind') && kinds.includes('solar')) return windAndPanelGif
-  if (kinds.includes('solar')) return solarGif
-  if (kinds.includes('hydro')) return hydroGif
-  return windGif
+interface SpriteInfo {
+  url: string
+  frames: number
+  /** Tam tur süresi (sn) — orijinal GIF hızını korur. */
+  duration: number
+}
+const WIND_SPRITE: SpriteInfo = { url: windSprite, frames: 91, duration: 91 / 30 }
+const SOLAR_SPRITE: SpriteInfo = { url: solarSprite, frames: 108, duration: 108 / 30 }
+const HYDRO_SPRITE: SpriteInfo = { url: hydroSprite, frames: 108, duration: 108 / 30 }
+const WIND_SOLAR_SPRITE: SpriteInfo = {
+  url: windAndPanelSprite,
+  frames: 108,
+  duration: 108 / 30
+}
+
+/**
+ * Santral türlerine göre baloncuk sprite'ı:
+ * yalnız rüzgar → wind; yalnız güneş → solar; yalnız hidro → hydro;
+ * rüzgar+güneş hibrit → wind-and-panel.
+ */
+function bubbleSprite(kinds: FacilityKind[]): SpriteInfo {
+  if (kinds.includes('wind') && kinds.includes('solar')) return WIND_SOLAR_SPRITE
+  if (kinds.includes('solar')) return SOLAR_SPRITE
+  if (kinds.includes('hydro')) return HYDRO_SPRITE
+  return WIND_SPRITE
 }
 
 /** Görsel durum → ölçek (baloncuk boyutu). preview/countdown'da küçülür ama kaybolmaz. */
@@ -93,6 +130,7 @@ export function LocationMarker({
   const scale = scaleFor(state, hovering)
   // Pin sırasına bağlı sabit faz kayması → baloncuklar senkron zıplamaz.
   const floatDelay = -((point.x + point.y) % 3.6)
+  const sprite = bubbleSprite(location.kinds)
 
   return (
     <g
@@ -143,17 +181,30 @@ export function LocationMarker({
               transition: 'box-shadow 0.3s ease'
             }}
           >
-            <img
-              src={bubbleGif(location.kinds)}
-              alt=""
-              draggable={false}
+            {/* Sprite penceresi: 78% kare, tek hücre gösterir; iç şerit sprite'ın
+                tamamıdır ve `steps()` translateX ile kare kare kayar (bkz. üstteki
+                PERF notu + index.css `eksim-sprite`). */}
+            <div
               style={{
                 width: '78%',
                 height: '78%',
-                objectFit: 'contain',
-                userSelect: 'none'
+                overflow: 'hidden',
+                position: 'relative'
               }}
-            />
+            >
+              <div
+                className="eksim-sprite-strip"
+                style={{
+                  height: '100%',
+                  width: `${sprite.frames * 100}%`,
+                  backgroundImage: `url(${sprite.url})`,
+                  backgroundSize: '100% 100%',
+                  backgroundRepeat: 'no-repeat',
+                  animationDuration: `${sprite.duration}s`,
+                  animationTimingFunction: `steps(${sprite.frames})`
+                }}
+              />
+            </div>
           </div>
         </div>
       </foreignObject>

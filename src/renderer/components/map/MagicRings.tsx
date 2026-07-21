@@ -258,6 +258,9 @@ export default function MagicRings({
     mount.addEventListener('click', onClick)
 
     let frameId: number
+    // Ambient efekt: 30fps'e sınırla (yavaş nabız/ölçek — fark edilmez, GPU ½).
+    const FRAME_INTERVAL = 1000 / 30
+    let lastFrame = 0
     const animate = (t: number): void => {
       frameId = requestAnimationFrame(animate)
 
@@ -265,6 +268,8 @@ export default function MagicRings({
       // gizliyse döngüyü canlı tut ama GPU'ya kare GÖNDERME — LightRays'teki
       // aynı desen (context her seferinde yeniden kurulmaz, resume ucuz).
       if (pausedRef.current || document.hidden) return
+      if (t - lastFrame < FRAME_INTERVAL) return // fps kapısı
+      lastFrame = t
 
       const p = propsRef.current
       if (!p) return

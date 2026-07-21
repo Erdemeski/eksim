@@ -3,7 +3,15 @@ import ReactDOM from 'react-dom/client'
 import gsap from 'gsap'
 import { MapScreen } from '../components/map/MapScreen'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { useKioskStore } from '../store/useKioskStore'
 import '../styles/index.css'
+
+// Kalite katmanını main süreçten oku ve store'a yaz (efekt bütçesi buradan akar).
+try {
+  useKioskStore.getState().setPerfTier(window.eksim.getPerfTier())
+} catch {
+  /* köprü yoksa (ör. izole test) varsayılan tier kalır */
+}
 
 /**
  * PERF: Bu pencerede çok sayıda sürekli GSAP döngüsü var (kıyı akışı, enerji

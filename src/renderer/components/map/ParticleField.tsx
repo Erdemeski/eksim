@@ -4,6 +4,8 @@ interface ParticleFieldProps {
   className?: string
   /** Bir tesis aktifken (video ön planda) döngüyü duraklat — GPU'yu videoya bırak. */
   paused?: boolean
+  /** Parçacık sayısı çarpanı (0..1) — düşük donanımda O(n²) bağ maliyetini kısar. */
+  particleScale?: number
 }
 
 const COLORS = ['#2EA6FF', '#34D399', '#7DD3FC']
@@ -25,9 +27,14 @@ interface Particle {
  * yok; ebeveyn boyutuna ResizeObserver ile uyar, devicePixelRatio'ya duyarlı.
  * Yakın parçacıklar ince çizgilerle bağlanır (takımyıldız etkisi).
  */
-export function ParticleField({ className, paused = false }: ParticleFieldProps): React.JSX.Element {
+export function ParticleField({
+  className,
+  paused = false,
+  particleScale = 1
+}: ParticleFieldProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const pausedRef = useRef(paused)
+  const scaleRef = useRef(particleScale)
   /** Dışarıdan (paused değişince) döngüyü yeniden değerlendirmek için köprü. */
   const syncRef = useRef<() => void>(() => {})
 
@@ -55,7 +62,7 @@ export function ParticleField({ className, paused = false }: ParticleFieldProps)
       canvas.style.width = `${w}px`
       canvas.style.height = `${h}px`
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      const count = Math.round(Math.min(48, (w * h) / 18000))
+      const count = Math.max(6, Math.round(Math.min(48, (w * h) / 18000) * scaleRef.current))
       particles = Array.from({ length: count }, () => ({
         x: Math.random() * w,
         y: Math.random() * h,
@@ -153,6 +160,12 @@ export function ParticleField({ className, paused = false }: ParticleFieldProps)
     pausedRef.current = paused
     syncRef.current()
   }, [paused])
+
+  // Tier açılışta sabit; yine de sonraki resize'ların doğru sayıyı kullanması için
+  // güncel tut (mevcut parçacıkları yeniden üretmeye gerek yok).
+  useEffect(() => {
+    scaleRef.current = particleScale
+  }, [particleScale])
 
   return <canvas ref={canvasRef} className={className} />
 }

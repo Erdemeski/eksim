@@ -1,0 +1,28 @@
+appId: com.eksim.phygitalkiosk
+productName: Eksim Phygital Kiosk
+copyright: © Eksim Holding
+
+directories:
+  output: release
+  buildResources: build
+
+# electron-vite üç hedefi de out/ altına derler; paket yalnız bunları içerir.
+files:
+  - out/**
+  - package.json
+
+# Büyük mp4'ler asar İÇİNDE kalırsa <video> range-request/seek sorunları
+# çıkarabilir → asar dışına çıkar (kiosk video kararlılığı).
+asar: true
+asarUnpack:
+  - '**/*.mp4'
+
+win:
+  icon: build/icon.ico
+  target: portable
+
+# Tek, kurulumsuz, çift-tıkla-çalışır exe (deneme paketi).
+portable:
+  artifactName: EksimPhygitalKiosk-${version}-portable.exe
+  # Çalışınca sabit bir klasöre çıkarır (her açılışta yeniden çıkarma churn'ü olmaz).
+  unpackDirName: EksimPhygitalKiosk

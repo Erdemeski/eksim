@@ -10,6 +10,7 @@ import {
   type IpcContext
 } from './ipc/ipcHandlers'
 import { DEFAULT_TOUCH_CONFIG } from '../shared/config'
+import { resolvePerfTier } from './perfTier'
 
 /**
  * Ana süreç orkestratörü. Sorumlulukları izole modüllere dağıtır:
@@ -96,9 +97,11 @@ function registerShortcuts(): void {
 
 app.whenReady().then(() => {
   logGpuStatus()
+  // Kalite katmanını GPU hazır olduktan sonra çöz (operatör ayarı > otomatik).
+  const perfTier = resolvePerfTier()
   const layout = resolveLayout()
-  const mapWindow = createMapWindow(layout.map)
-  const videoWindow = createVideoWindow(layout.video)
+  const mapWindow = createMapWindow(layout.map, perfTier)
+  const videoWindow = createVideoWindow(layout.video, perfTier)
 
   ipcContext = { mapWindow, videoWindow }
   registerIpcHandlers(ipcContext)

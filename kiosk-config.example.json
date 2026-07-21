@@ -1,0 +1,4 @@
+{
+  "//": "Operatör kalite ayarı. Bu dosyayı 'kiosk-config.json' adıyla portable exe'nin YANINA koyun (veya scripts/Kalite-Ayarla.bat ile yazdırın). perfTier: 'auto' | 'high' | 'low'. auto = donanıma göre otomatik (software/zayıf GPU → low).",
+  "perfTier": "auto"
+}

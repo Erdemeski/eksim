@@ -32,6 +32,17 @@ interface LightRaysProps {
    * önceliklidir (aynı Chromium GPU sürecini paylaşırlar).
    */
   paused?: boolean
+  /**
+   * Hedef kare hızı (fps). Ambient hüzmeler yavaş sürüklendiği için 30fps görsel
+   * olarak fark edilmez ama fullscreen shader'ın GPU fill-rate yükünü ~yarıya
+   * indirir (kiosk düşük donanım sertleştirmesi — bkz. shared/perf.ts).
+   */
+  fps?: number
+  /**
+   * Render DPR tavanı. Soft glow efektlerinde retina gerekmez; yüksek-DPI
+   * panelde bunu 1.5/1.0'a çekmek fill-rate'i belirgin düşürür.
+   */
+  maxDpr?: number
 }
 
 const DEFAULT_COLOR = '#ffffff'
@@ -214,7 +225,9 @@ export function LightRays({
   noiseAmount = 0.0,
   distortion = 0.0,
   className = '',
-  paused = false
+  paused = false,
+  fps = 30,
+  maxDpr = 2
 }: LightRaysProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const uniformsRef = useRef<Uniforms | null>(null)
@@ -227,10 +240,18 @@ export function LightRays({
   const [isVisible, setIsVisible] = useState(false)
   const observerRef = useRef<IntersectionObserver | null>(null)
   const pausedRef = useRef(paused)
+  // fps/DPR bütçesi tier ile gelir; loop closure'ı yeniden kurmamak için ref.
+  const fpsRef = useRef(fps)
+  const maxDprRef = useRef(maxDpr)
+  const lastFrameRef = useRef(0)
 
   useEffect(() => {
     pausedRef.current = paused
   }, [paused])
+  useEffect(() => {
+    fpsRef.current = fps
+    maxDprRef.current = maxDpr
+  }, [fps, maxDpr])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -258,7 +279,10 @@ export function LightRays({
       await new Promise((resolve) => setTimeout(resolve, 10))
       if (!containerRef.current || cancelled) return
 
-      const renderer = new Renderer({ dpr: Math.min(window.devicePixelRatio, 2), alpha: true })
+      const renderer = new Renderer({
+        dpr: Math.min(window.devicePixelRatio, maxDprRef.current),
+        alpha: true
+      })
       rendererRef.current = renderer
 
       const gl = renderer.gl
@@ -297,7 +321,7 @@ export function LightRays({
       const updatePlacement = (): void => {
         const r = rendererRef.current
         if (!containerRef.current || !r) return
-        r.dpr = Math.min(window.devicePixelRatio, 2)
+        r.dpr = Math.min(window.devicePixelRatio, maxDprRef.current)
         const { clientWidth: wCSS, clientHeight: hCSS } = containerRef.current
         r.setSize(wCSS, hCSS)
         const dpr = r.dpr
@@ -316,6 +340,13 @@ export function LightRays({
           animationIdRef.current = requestAnimationFrame(loop)
           return
         }
+        // fps kapısı: hedef fps'in altında kare üretme (GPU fill-rate tasarrufu).
+        // iTime yine gerçek `t`'yi kullandığından hareket zaman-doğru kalır.
+        if (t - lastFrameRef.current < 1000 / fpsRef.current) {
+          animationIdRef.current = requestAnimationFrame(loop)
+          return
+        }
+        lastFrameRef.current = t
         if (!rendererRef.current || !uniformsRef.current || !meshRef.current) return
 
         uniforms.iTime.value = t * 0.001

@@ -1,6 +1,7 @@
 /**
  * Tüm süreçlerde paylaşılan tipler. Süreçler arası tek "sözleşme".
  */
+import type { PerfTier } from './perf'
 
 /** Ekran uzayında 2B nokta (piksel). */
 export interface Point {
@@ -135,6 +136,8 @@ export const WINDOW_ROLE_ARG = '--eksim-role='
 export interface EksimBridge {
   /** Bu pencerenin rolünü senkron döndürür (map | video). */
   getWindowRole: () => WindowRole
+  /** main süreçte çözülmüş kalite katmanını senkron döndürür (high | low). */
+  getPerfTier: () => PerfTier
   /** Harita → main → video: figür yerleşti/hareket etti. */
   emitFigure: (event: FigureEventPayload) => void
   /** Harita → main → video: figür kaldırıldı. */

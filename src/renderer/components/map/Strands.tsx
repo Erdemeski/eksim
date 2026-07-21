@@ -353,12 +353,17 @@ export default function Strands({
     resize()
 
     let animateId = 0
+    // Ambient efekt: 30fps'e sınırla (banner şeridi — fark edilmez, GPU ½).
+    const FRAME_INTERVAL = 1000 / 30
+    let lastFrame = 0
     const update = (t: number): void => {
       animateId = requestAnimationFrame(update)
 
       // Duraklatılmışsa (banner gizliyken) veya pencere gizliyse kare
       // GÖNDERME — LightRays'teki aynı desen, context canlı kalır.
       if (pausedRef.current || document.hidden) return
+      if (t - lastFrame < FRAME_INTERVAL) return // fps kapısı (uTime mutlak → zaman-doğru)
+      lastFrame = t
 
       const current = propsRef.current
       program.uniforms.uTime.value = t * 0.001

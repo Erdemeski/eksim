@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { WINDOW_ROLE_ARG } from '../../shared/types'
 import type { WindowRole } from '../../shared/types'
+import { PERF_TIER_ARG, type PerfTier } from '../../shared/perf'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -29,7 +30,11 @@ function loadEntry(win: BrowserWindow, role: WindowRole): void {
  *  - Prod: kiosk + çerçevesiz + her zaman üstte (fuar/lobi kararlılığı).
  *  - Dev: çerçeveli, taşınabilir pencereler (geliştirici ergonomisi).
  */
-export function createKioskWindow(role: WindowRole, bounds: Electron.Rectangle): BrowserWindow {
+export function createKioskWindow(
+  role: WindowRole,
+  bounds: Electron.Rectangle,
+  perfTier: PerfTier
+): BrowserWindow {
   const win = new BrowserWindow({
     ...bounds,
     show: false,
@@ -49,7 +54,7 @@ export function createKioskWindow(role: WindowRole, bounds: Electron.Rectangle):
       // → videoda ciddi takılma. Kiosk'ta her iki ekran da her zaman tam hızda
       // çalışmalı, bu yüzden kapatılır (app düzeyi switch'lerle birlikte).
       backgroundThrottling: false,
-      additionalArguments: [`${WINDOW_ROLE_ARG}${role}`]
+      additionalArguments: [`${WINDOW_ROLE_ARG}${role}`, `${PERF_TIER_ARG}${perfTier}`]
     }
   })
 

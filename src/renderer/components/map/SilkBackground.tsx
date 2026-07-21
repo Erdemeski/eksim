@@ -87,6 +87,10 @@ interface SilkBackgroundProps {
   rotation?: number
   /** true iken kare göndermez, WebGL bağlamı canlı kalır (screen saver gizliyken). */
   paused?: boolean
+  /** Hedef kare hızı (fps) — ambient efekt, 30fps yeterli (kiosk GPU tasarrufu). */
+  fps?: number
+  /** Render DPR tavanı (yüksek-DPI panelde fill-rate düşürür). */
+  maxDpr?: number
 }
 
 export function SilkBackground({
@@ -95,17 +99,25 @@ export function SilkBackground({
   color = '#7B7481',
   noiseIntensity = 1.5,
   rotation = 0,
-  paused = false
+  paused = false,
+  fps = 30,
+  maxDpr = 2
 }: SilkBackgroundProps): React.JSX.Element {
   const mountRef = useRef<HTMLDivElement>(null)
   const propsRef = useRef({ speed, scale, color, noiseIntensity, rotation })
   const pausedRef = useRef(paused)
+  const fpsRef = useRef(fps)
+  const maxDprRef = useRef(maxDpr)
 
   propsRef.current = { speed, scale, color, noiseIntensity, rotation }
 
   useEffect(() => {
     pausedRef.current = paused
   }, [paused])
+  useEffect(() => {
+    fpsRef.current = fps
+    maxDprRef.current = maxDpr
+  }, [fps, maxDpr])
 
   useEffect(() => {
     const mount = mountRef.current
@@ -145,7 +157,7 @@ export function SilkBackground({
     const resize = (): void => {
       const w = mount.clientWidth
       const h = mount.clientHeight
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxDprRef.current))
       renderer.setSize(w, h)
     }
     resize()
@@ -157,9 +169,16 @@ export function SilkBackground({
     let last = performance.now()
     const animate = (t: number): void => {
       frameId = requestAnimationFrame(animate)
+      // Duraklatılmışsa/gizliyse zaman tabanını sıfırla (resume'da sıçrama olmaz).
+      if (pausedRef.current || document.hidden) {
+        last = t
+        return
+      }
+      // fps kapısı: hedefin altında kare üretme. `last` yalnız render edilen
+      // karede güncellenir → biriken delta ile uTime zaman-doğru ilerler.
+      if (t - last < 1000 / fpsRef.current) return
       const deltaSec = (t - last) / 1000
       last = t
-      if (pausedRef.current || document.hidden) return
 
       const p = propsRef.current
       uniforms.uSpeed.value = p.speed

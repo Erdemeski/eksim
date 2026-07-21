@@ -18,6 +18,7 @@ import { ErrorBoundary } from '../ErrorBoundary'
 import { BrandLogo } from '../brand/BrandLogo'
 import { useFigureTouch } from '../../hooks/useFigureTouch'
 import { useKioskStore } from '../../store/useKioskStore'
+import { PERF_BUDGET } from '@shared/perf'
 import { ipcService } from '../../services/ipcService'
 import { locationToViewBox, nearestLocation, screenToViewBox } from '../../services/svgMapService'
 import { EKSIM_LOCATIONS } from '@shared/locations'
@@ -63,6 +64,8 @@ export function MapScreen(): React.JSX.Element {
   const dwellTween = useRef<gsap.core.Tween | null>(null)
 
   const figureTouch = useKioskStore((s) => s.touchConfig.figureTouch)
+  const perfTier = useKioskStore((s) => s.perfTier)
+  const budget = PERF_BUDGET[perfTier]
   const activeLocation = useKioskStore((s) => s.activeLocation)
   const setActiveLocation = useKioskStore((s) => s.setActiveLocation)
   const setFigure = useKioskStore((s) => s.setFigure)
@@ -310,7 +313,10 @@ export function MapScreen(): React.JSX.Element {
       {/* PERF: ekran koruyucu z-60'ta tam opak kaplıyor; altındaki parçacık
           döngüsünü ve EnergyGrid'i o pencerede durdurmak görünürde hiçbir şeyi
           değiştirmez ama açılıştaki/boştaki en ağır CPU/GPU burst'ünü keser. */}
-      <MapBackground paused={!!activeLocation || screensaver} />
+      <MapBackground
+        paused={!!activeLocation || screensaver}
+        particleScale={budget.particleScale}
+      />
 
       <div className="absolute inset-0 z-10">
         <TurkeyMap svgRef={svgRef}>
@@ -361,8 +367,10 @@ export function MapScreen(): React.JSX.Element {
           (video karşı ekranda oynarken) ActiveVideoBanner'a yer açmak için
           yumuşakça soluklaşır + duraklar (GPU işi durur); pasifleşince geri
           gelir. Sarmalayıcı ekran koruyucu kapanınca bir kez mount edilir, bir
-          daha unmount EDİLMEZ (yalnız opacity/paused ile yönetilir). */}
-      {!screensaver && (
+          daha unmount EDİLMEZ (yalnız opacity/paused ile yönetilir).
+          PERF: `budget.lightRays` low tier'da false → bu en ağır tam ekran shader
+          zayıf/software GPU'da hiç oluşturulmaz (bkz. shared/perf.ts). */}
+      {!screensaver && budget.lightRays && (
         <div
           className="pointer-events-none absolute inset-0 z-[15]"
           style={{ opacity: activeLocation ? 0 : 1, transition: 'opacity 0.5s ease' }}
@@ -381,6 +389,8 @@ export function MapScreen(): React.JSX.Element {
             noiseAmount={0}
             distortion={0}
             paused={screensaver || !!activeLocation}
+            fps={budget.effectFps}
+            maxDpr={budget.effectDpr}
           />
         </div>
       )}
@@ -389,7 +399,9 @@ export function MapScreen(): React.JSX.Element {
           Strands şeridi — LightRays ile karşılıklı yumuşak geçiş yapar (bkz.
           ActiveVideoBanner.tsx). Ekran koruyucu kapanınca bir kez mount edilir,
           bir daha unmount EDİLMEZ (WebGL kalıcı — bu turun kararlılık dersi). */}
-      {!screensaver && <ActiveVideoBanner active={!!activeLocation} />}
+      {!screensaver && (
+        <ActiveVideoBanner active={!!activeLocation} glowScale={budget.strandsGlow} />
+      )}
 
       {/* Pin popup katmanı (idle tanıtım + geri sayım + aktif detay). */}
       <PopupLayer
@@ -408,7 +420,14 @@ export function MapScreen(): React.JSX.Element {
       {/* Ekran koruyucu (yalnız map penceresi) — açılışta + 90 sn hareketsizlikte.
           AnimatePresence ile giriş/çıkış animasyonlu; dokununca canlı haritaya. */}
       <AnimatePresence>
-        {screensaver && <ScreenSaver key="ss" onDismiss={dismissScreensaver} />}
+        {screensaver && (
+          <ScreenSaver
+            key="ss"
+            onDismiss={dismissScreensaver}
+            effectFps={budget.effectFps}
+            effectDpr={budget.effectDpr}
+          />
+        )}
       </AnimatePresence>
     </div>
   )
