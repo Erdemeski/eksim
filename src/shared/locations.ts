@@ -1,7 +1,13 @@
 import type { EksimLocation } from './types'
 
 /**
- * Eksim Enerji'nin gerçek santral portföyü (araştırılmış, güncel liste).
+ * Eksim Holding'in harita üzerindeki proje/tesis portföyü.
+ *
+ * Enerji Grubu (sector: 'energy'): Eksim Enerji'nin gerçek santral portföyü
+ * (araştırılmış, güncel liste). Dicle Grubu ve Gıda Grubu (sector: 'dicle' |
+ * 'food') bölümleri ise dosyanın SONUNDA, ayrı başlıklar altında yer alan
+ * TEMSİLİ (placeholder) noktalardır — gerçek proje verisi netleşince
+ * güncellenmelidir (bkz. ilgili bölüm başındaki notlar).
  *
  * `coordinates` [boylam, enlem] (LngLat) sırasındadır — `svgPoint` KASITLI
  * OLARAK verilmez; konum, `svgMapService.projectLngLat`'in turkey.svg'nin
@@ -18,7 +24,9 @@ import type { EksimLocation } from './types'
  * `capacities` = türe göre MEVCUT kırılım (RES/GES/HES); `additionalMw` =
  * "işlemde olan ilave kapasite artışı projesi" — rakamlar Eksim Enerji'nin
  * kendi proje listesinden birebir aktarılmıştır, aralarındaki aritmetik
- * ilişki (dolum/genişletme) yorumlanmadan olduğu gibi sunulur.
+ * ilişki (dolum/genişletme) yorumlanmadan olduğu gibi sunulur. `totalMw: 0`
+ * (kapasite alanları olmadan) LocationPopup'ta MW bloklarının otomatik
+ * gizlenmesini tetikler — bkz. Dicle/Gıda bölümleri.
  */
 export const EKSIM_LOCATIONS: EksimLocation[] = [
   {
@@ -290,6 +298,141 @@ export const EKSIM_LOCATIONS: EksimLocation[] = [
     additionalMw: 56,
     // Yerel için: src/renderer/assets/videos/yozgat.mp4 ekleyin (videoId aktif).
     videoId: 'yozgat'
+  },
+
+  // ---- Dicle Grubu (TEMSİLİ) ----
+  // Aşağıdaki 6 nokta yer tutucudur: Dicle Elektrik'in hizmet bölgesi olan
+  // Güneydoğu Anadolu illerinin il merkezlerine yerleştirilmiştir (gerçek
+  // tesis/bölge müdürlüğü konumları DEĞİLDİR). `totalMw: 0` ve `capacities`
+  // YOKLUĞU kasıtlı — LocationPopup bu durumda MW/kapasite bloklarını
+  // otomatik gizler (bkz. `hasCapacity`). `videoId` verilmez → video
+  // ekranında genel `eksim.mp4` tanıtım videosuna düşülür. Gerçek proje
+  // listesi netleşince bu blok güncellenmeli/genişletilmelidir.
+  {
+    id: 'dicle-diyarbakir',
+    name: 'Diyarbakır',
+    sector: 'dicle',
+    description:
+      "Dicle Grubu'nun Diyarbakır'daki elektrik dağıtım faaliyetini temsil eden yer tutucu nokta — gerçek tesis/bölge bilgisiyle güncellenecek.",
+    coordinates: [40.2306, 37.9144],
+    provinceId: 'TR21',
+    kinds: ['grid'],
+    totalMw: 0
+  },
+  {
+    id: 'dicle-sanliurfa',
+    name: 'Şanlıurfa',
+    sector: 'dicle',
+    description:
+      "Dicle Grubu'nun Şanlıurfa'daki elektrik dağıtım faaliyetini temsil eden yer tutucu nokta — gerçek tesis/bölge bilgisiyle güncellenecek.",
+    coordinates: [38.7955, 37.1591],
+    provinceId: 'TR63',
+    kinds: ['grid'],
+    totalMw: 0
+  },
+  {
+    id: 'dicle-mardin',
+    name: 'Mardin',
+    sector: 'dicle',
+    description:
+      "Dicle Grubu'nun Mardin'deki elektrik dağıtım faaliyetini temsil eden yer tutucu nokta — gerçek tesis/bölge bilgisiyle güncellenecek.",
+    coordinates: [40.7245, 37.3212],
+    provinceId: 'TR47',
+    kinds: ['grid'],
+    totalMw: 0
+  },
+  {
+    id: 'dicle-batman',
+    name: 'Batman',
+    sector: 'dicle',
+    description:
+      "Dicle Grubu'nun Batman'daki elektrik dağıtım faaliyetini temsil eden yer tutucu nokta — gerçek tesis/bölge bilgisiyle güncellenecek.",
+    coordinates: [41.1351, 37.8812],
+    provinceId: 'TR72',
+    kinds: ['grid'],
+    totalMw: 0
+  },
+  {
+    id: 'dicle-siirt',
+    name: 'Siirt',
+    sector: 'dicle',
+    description:
+      "Dicle Grubu'nun Siirt'teki elektrik dağıtım faaliyetini temsil eden yer tutucu nokta — gerçek tesis/bölge bilgisiyle güncellenecek.",
+    coordinates: [41.9427, 37.9333],
+    provinceId: 'TR56',
+    kinds: ['grid'],
+    totalMw: 0
+  },
+  {
+    id: 'dicle-sirnak',
+    name: 'Şırnak',
+    sector: 'dicle',
+    description:
+      "Dicle Grubu'nun Şırnak'taki elektrik dağıtım faaliyetini temsil eden yer tutucu nokta — gerçek tesis/bölge bilgisiyle güncellenecek.",
+    coordinates: [42.4611, 37.5164],
+    provinceId: 'TR73',
+    kinds: ['grid'],
+    totalMw: 0
+  },
+
+  // ---- Gıda Grubu (TEMSİLİ) ----
+  // Aşağıdaki 5 nokta yer tutucudur: ülke geneline yayılmış, birbirinden
+  // uzak il merkezlerine yerleştirilmiştir (gerçek tesis konumları DEĞİLDİR).
+  // Aynı kurallar geçerli: totalMw:0, capacities yok, videoId yok.
+  {
+    id: 'gida-konya',
+    name: 'Konya',
+    sector: 'food',
+    description:
+      "Gıda Grubu'nun Konya'daki üretim faaliyetini temsil eden yer tutucu nokta — gerçek tesis bilgisiyle güncellenecek.",
+    coordinates: [32.4846, 37.8746],
+    provinceId: 'TR42',
+    kinds: ['food'],
+    totalMw: 0
+  },
+  {
+    id: 'gida-bursa',
+    name: 'Bursa',
+    sector: 'food',
+    description:
+      "Gıda Grubu'nun Bursa'daki üretim faaliyetini temsil eden yer tutucu nokta — gerçek tesis bilgisiyle güncellenecek.",
+    coordinates: [29.0611, 40.1826],
+    provinceId: 'TR16',
+    kinds: ['food'],
+    totalMw: 0
+  },
+  {
+    id: 'gida-izmir',
+    name: 'İzmir',
+    sector: 'food',
+    description:
+      "Gıda Grubu'nun İzmir'deki üretim faaliyetini temsil eden yer tutucu nokta — gerçek tesis bilgisiyle güncellenecek.",
+    coordinates: [27.1428, 38.4237],
+    provinceId: 'TR35',
+    kinds: ['food'],
+    totalMw: 0
+  },
+  {
+    id: 'gida-ankara',
+    name: 'Ankara',
+    sector: 'food',
+    description:
+      "Gıda Grubu'nun Ankara'daki üretim faaliyetini temsil eden yer tutucu nokta — gerçek tesis bilgisiyle güncellenecek.",
+    coordinates: [32.8597, 39.9334],
+    provinceId: 'TR06',
+    kinds: ['food'],
+    totalMw: 0
+  },
+  {
+    id: 'gida-adana',
+    name: 'Adana',
+    sector: 'food',
+    description:
+      "Gıda Grubu'nun Adana'daki üretim faaliyetini temsil eden yer tutucu nokta — gerçek tesis bilgisiyle güncellenecek.",
+    coordinates: [35.3213, 37.0],
+    provinceId: 'TR01',
+    kinds: ['food'],
+    totalMw: 0
   }
 ]
 

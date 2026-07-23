@@ -11,7 +11,7 @@ interface ProvinceHighlightProps {
 
 /**
  * Aktif/hover/idle-önizleme pininin bulunduğu ilin siyasi sınırını boyayan
- * SVG katmanı. TurkeyMap'in children alanında, EnergyGrid ve marker'lardan
+ * SVG katmanı. TurkeyMap'in children alanında, ConnectionGrid ve marker'lardan
  * ÖNCE çizilir → uydu + neon sınırın üstünde, pin/bağların altında kalır.
  *
  * Geometri trProvinces.ts'ten gelir (tr-seperated.svg, turkey.svg ile aynı

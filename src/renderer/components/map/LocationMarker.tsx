@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import type { EksimLocation, FacilityKind, Point } from '@shared/types'
 import type { MarkerVisualState } from './markerState'
+import { SectorIcon } from './SectorGraphics'
 import windSprite from '../../assets/wind-sprite.png'
 import solarSprite from '../../assets/solar-sprite.png'
 import hydroSprite from '../../assets/hydro-sprite.png'
@@ -17,6 +18,12 @@ interface LocationMarkerProps {
   interactive: boolean
   /** İmleç gir/çıkışını ebeveyne bildirir (dwell/geri sayım MapScreen'de yönetilir). */
   onHoverChange?: (hovering: boolean, location: EksimLocation) => void
+  /**
+   * Baloncuk çapı (viewBox birimi). Varsayılan ana harita ölçeğine (BUBBLE)
+   * göredir; bölge penceresi gibi FARKLI viewBox ölçeğinde çizildiğinde ekran
+   * boyutunu "standart" tutmak için buradan küçültülür (bkz. RegionDetailOverlay).
+   */
+  bubble?: number
 }
 
 /** Baloncuk çapı (viewBox birimi) — "ne büyük ne küçük", orta boy. */
@@ -62,13 +69,16 @@ const WIND_SOLAR_SPRITE: SpriteInfo = {
 /**
  * Santral türlerine göre baloncuk sprite'ı:
  * yalnız rüzgar → wind; yalnız güneş → solar; yalnız hidro → hydro;
- * rüzgar+güneş hibrit → wind-and-panel.
+ * rüzgar+güneş hibrit → wind-and-panel. Gıda/dağıtım (Dicle) türleri için
+ * animasyonlu sprite YOK (henüz üretilmedi) → `null` döner, çağıran taraf
+ * statik `SectorIcon` amblemine düşer (bkz. aşağıdaki render).
  */
-function bubbleSprite(kinds: FacilityKind[]): SpriteInfo {
+function bubbleSprite(kinds: FacilityKind[]): SpriteInfo | null {
   if (kinds.includes('wind') && kinds.includes('solar')) return WIND_SOLAR_SPRITE
   if (kinds.includes('solar')) return SOLAR_SPRITE
   if (kinds.includes('hydro')) return HYDRO_SPRITE
-  return WIND_SPRITE
+  if (kinds.includes('wind')) return WIND_SPRITE
+  return null
 }
 
 /** Görsel durum → ölçek (baloncuk boyutu). preview/countdown'da küçülür ama kaybolmaz. */
@@ -110,7 +120,8 @@ export function LocationMarker({
   color,
   state,
   interactive,
-  onHoverChange
+  onHoverChange,
+  bubble = BUBBLE
 }: LocationMarkerProps): React.JSX.Element {
   const [hovering, setHovering] = useState(false)
 
@@ -141,13 +152,13 @@ export function LocationMarker({
     >
       {/* Geniş şeffaf hover hedefi. Aktif/gizliyken de canlı kalır ki imlecin
           konumdan AYRILMASI algılanabilsin (ayrılınca video durur). */}
-      <circle r={28} fill="transparent" pointerEvents={interactive ? 'all' : 'none'} />
+      <circle r={bubble * 0.74} fill="transparent" pointerEvents={interactive ? 'all' : 'none'} />
 
       <foreignObject
-        x={-BUBBLE / 2}
-        y={-BUBBLE / 2}
-        width={BUBBLE}
-        height={BUBBLE}
+        x={-bubble / 2}
+        y={-bubble / 2}
+        width={bubble}
+        height={bubble}
         pointerEvents="none"
         style={{ overflow: 'visible' }}
       >
@@ -155,8 +166,8 @@ export function LocationMarker({
             süzülme animasyonu (ayrı öğe → transform'lar çakışmaz). */}
         <div
           style={{
-            width: BUBBLE,
-            height: BUBBLE,
+            width: bubble,
+            height: bubble,
             opacity: hidden ? 0 : 1,
             transform: `scale(${scale})`,
             transition: 'opacity 0.35s ease, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1)'
@@ -183,28 +194,38 @@ export function LocationMarker({
           >
             {/* Sprite penceresi: 78% kare, tek hücre gösterir; iç şerit sprite'ın
                 tamamıdır ve `steps()` translateX ile kare kare kayar (bkz. üstteki
-                PERF notu + index.css `eksim-sprite`). */}
-            <div
-              style={{
-                width: '78%',
-                height: '78%',
-                overflow: 'hidden',
-                position: 'relative'
-              }}
-            >
+                PERF notu + index.css `eksim-sprite`). Sprite'ı olmayan türlerde
+                (ör. gıda/dağıtım) yerine statik, animasyonsuz `SectorIcon`
+                amblemi çizilir — hafif, ekstra decode maliyeti yok. */}
+            {sprite ? (
               <div
-                className="eksim-sprite-strip"
                 style={{
-                  height: '100%',
-                  width: `${sprite.frames * 100}%`,
-                  backgroundImage: `url(${sprite.url})`,
-                  backgroundSize: '100% 100%',
-                  backgroundRepeat: 'no-repeat',
-                  animationDuration: `${sprite.duration}s`,
-                  animationTimingFunction: `steps(${sprite.frames})`
+                  width: '78%',
+                  height: '78%',
+                  overflow: 'hidden',
+                  position: 'relative'
                 }}
+              >
+                <div
+                  className="eksim-sprite-strip"
+                  style={{
+                    height: '100%',
+                    width: `${sprite.frames * 100}%`,
+                    backgroundImage: `url(${sprite.url})`,
+                    backgroundSize: '100% 100%',
+                    backgroundRepeat: 'no-repeat',
+                    animationDuration: `${sprite.duration}s`,
+                    animationTimingFunction: `steps(${sprite.frames})`
+                  }}
+                />
+              </div>
+            ) : (
+              <SectorIcon
+                kind={location.kinds[0]}
+                className="h-[60%] w-[60%]"
+                style={{ color }}
               />
-            </div>
+            )}
           </div>
         </div>
       </foreignObject>

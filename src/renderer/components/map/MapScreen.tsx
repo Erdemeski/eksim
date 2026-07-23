@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { AnimatePresence } from 'framer-motion'
 import { TurkeyMap } from './TurkeyMap'
 import { MapBackground } from './MapBackground'
 import { LightRays } from './LightRays'
-import { EnergyGrid } from './EnergyGrid'
+import { ConnectionGrid } from './ConnectionGrid'
+import { CityLights } from './CityLights'
 import { LocationMarker } from './LocationMarker'
 import { MarkerRingsLayer } from './MarkerRingsLayer'
 import { ProvinceHighlight } from './ProvinceHighlight'
@@ -12,6 +13,11 @@ import { PopupLayer, type DwellState } from './PopupLayer'
 import { MapIdlePanel } from './MapIdlePanel'
 import { ScreenSaver } from './ScreenSaver'
 import { ActiveVideoBanner } from './ActiveVideoBanner'
+import { SectorSidebar } from './SectorSidebar'
+import { RegionCluster } from './RegionCluster'
+import { RegionDetailOverlay } from './RegionDetailOverlay'
+import { RegionPopup } from './RegionPopup'
+import { partitionVisible, type RegionClusterData } from './regions'
 import { NEIGHBOR_SUPPRESS, type MarkerVisualState } from './markerState'
 import { accentColor } from './SectorGraphics'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -19,10 +25,11 @@ import { BrandLogo } from '../brand/BrandLogo'
 import { useFigureTouch } from '../../hooks/useFigureTouch'
 import { useKioskStore } from '../../store/useKioskStore'
 import { PERF_BUDGET } from '@shared/perf'
+import { SECTOR_META } from '@shared/sectors'
 import { ipcService } from '../../services/ipcService'
 import { locationToViewBox, nearestLocation, screenToViewBox } from '../../services/svgMapService'
 import { EKSIM_LOCATIONS } from '@shared/locations'
-import type { EksimLocation, FigureEventPayload, FigureResult } from '@shared/types'
+import type { EksimLocation, FigureEventPayload, FigureResult, Sector } from '@shared/types'
 
 /** Tesis vurgu rengi — hibrit sahalarda ayırt edici mor, tekil türde kendi rengi. */
 function colorOf(loc: EksimLocation): string {
@@ -69,6 +76,45 @@ export function MapScreen(): React.JSX.Element {
   const activeLocation = useKioskStore((s) => s.activeLocation)
   const setActiveLocation = useKioskStore((s) => s.setActiveLocation)
   const setFigure = useKioskStore((s) => s.setFigure)
+  const selectedSector = useKioskStore((s) => s.selectedSector)
+  const setSelectedSector = useKioskStore((s) => s.setSelectedSector)
+
+  // Yan barda seçili gruba göre görünür pin listesi ("Tümü" → hepsi).
+  const visibleLocations = useMemo(
+    () =>
+      selectedSector === 'all'
+        ? EKSIM_LOCATIONS
+        : EKSIM_LOCATIONS.filter((loc) => loc.sector === selectedSector),
+    [selectedSector]
+  )
+  // Sıkışık bölgeler (bkz. regions.ts) tek KÜMEYE indirgenir: üyeleri normal pin
+  // akışından çıkarılır (loose), ana haritada küme olarak gösterilir; kümeye
+  // dokununca büyütülmüş bölge penceresi açılır. Eşiği geçmeyen bölge üyeleri
+  // loose'ta kalır (normal pin).
+  const { clusters, loose } = useMemo(() => partitionVisible(visibleLocations), [visibleLocations])
+
+  // Bağlantı ızgaraları grup başına ayrı çizilir (her grubun kendi rengi/
+  // animasyon türü var — bkz. shared/sectors.ts) — "Tümü" modunda birden fazla
+  // ızgara aynı anda döner. Kümelenmiş üyeler hariç (onların bağları bölge
+  // penceresinde çizilir) → yalnız `loose` üzerinden gruplanır.
+  const connectionGroups = useMemo(() => {
+    const bySector = new Map<Sector, EksimLocation[]>()
+    for (const loc of loose) {
+      const group = bySector.get(loc.sector)
+      if (group) group.push(loc)
+      else bySector.set(loc.sector, [loc])
+    }
+    return Array.from(bySector.entries())
+  }, [loose])
+
+  // Açık bölge penceresi (kümeye dokununca). overlaySvgRef → figür isabet testi
+  // pencere açıkken bu SVG'nin CTM'iyle yapılır.
+  const overlaySvgRef = useRef<SVGSVGElement>(null)
+  const [openRegionId, setOpenRegionId] = useState<string | null>(null)
+  const openCluster: RegionClusterData | null = openRegionId
+    ? (clusters.find((c) => c.region.id === openRegionId) ?? null)
+    : null
+
   // Ekran koruyucu açılışta AÇIK (çekim ekranı); dokununca kapanır.
   const [screensaver, setScreensaver] = useState(true)
   const [dwell, setDwell] = useState<DwellState | null>(null)
@@ -167,17 +213,37 @@ export function MapScreen(): React.JSX.Element {
     (result: FigureResult) => {
       if (result.mode !== 'tangible') return
       const container = containerRef.current
-      const svg = svgRef.current
-      if (!container || !svg) return
+      if (!container) return
+      // Bölge penceresi açıksa figür isabet testi pencere SVG'si + bölge üyeleri
+      // üzerinden; değilse ana harita SVG'si + serbest (loose) pinler üzerinden.
+      const svg = openCluster ? overlaySvgRef.current : svgRef.current
+      const pool = openCluster ? openCluster.members : loose
+      if (!svg) return
       const rect = container.getBoundingClientRect()
       const vb = screenToViewBox(svg, result.centroid.x + rect.left, result.centroid.y + rect.top)
       if (!vb) return
-      const location = nearestLocation(vb, EKSIM_LOCATIONS)
+      const location = nearestLocation(vb, pool)
       if (location) activate(location)
       else deactivate()
     },
-    [activate, deactivate]
+    [activate, deactivate, loose, openCluster]
   )
+
+  // Kümeye dokununca bölge penceresini aç (bekleyen dwell'i iptal et).
+  const handleOpenRegion = useCallback(
+    (regionId: string) => {
+      cancelDwell()
+      setOpenRegionId(regionId)
+    },
+    [cancelDwell]
+  )
+
+  // Bölge penceresini kapat: aktif pin/video ve dwell temizlenir.
+  const handleCloseRegion = useCallback(() => {
+    deactivate()
+    cancelDwell()
+    setOpenRegionId(null)
+  }, [deactivate, cancelDwell])
 
   useFigureTouch({ targetRef: containerRef, onFigure: handleFigure, onLift: deactivate })
 
@@ -192,6 +258,28 @@ export function MapScreen(): React.JSX.Element {
     },
     []
   )
+
+  // Sektör değişince (yan bar): önceki gruptan kalan aktif pin/video ve dwell
+  // geri sayımı temizlenir, boşta önizleme döngüsü sıfırdan başlar. İlk
+  // render'da (varsayılan sektörle mount olurken) gereksiz deactivate/IPC
+  // çağrısı olmaması için bir "ilk çalıştırma" bayrağı kullanılır.
+  const isFirstSectorRender = useRef(true)
+  useEffect(() => {
+    if (isFirstSectorRender.current) {
+      isFirstSectorRender.current = false
+      return
+    }
+    deactivate()
+    cancelDwell()
+    setOpenRegionId(null)
+    setCycleIndex(0)
+  }, [selectedSector, deactivate, cancelDwell])
+
+  // Güvenlik ağı: açık bölge penceresi (filtre değişimi vb. nedeniyle) artık bir
+  // kümeye karşılık gelmiyorsa kapat.
+  useEffect(() => {
+    if (openRegionId && !openCluster) setOpenRegionId(null)
+  }, [openRegionId, openCluster])
 
   // Kullanıcı etkinliğini işaretle (ekran koruyucu geri sayımını sıfırlar).
   const noteActivity = useCallback(() => {
@@ -212,16 +300,24 @@ export function MapScreen(): React.JSX.Element {
     }
   }, [noteActivity])
 
-  // Aktivasyon/dwell (figür modu dahil gerçek etkileşim) de etkinlik sayılır.
+  // Aktivasyon/dwell/bölge-penceresi (figür modu dahil gerçek etkileşim) de
+  // etkinlik sayılır. Değişimde HER ZAMAN güncellenir (aktifleşince VE
+  // pasifleşince/kapanınca) → durum bırakılınca ekran koruyucu geri sayımı taze
+  // baştan başlar.
   useEffect(() => {
-    if (activeLocation || dwell) lastActivityRef.current = Date.now()
-  }, [activeLocation, dwell])
+    lastActivityRef.current = Date.now()
+  }, [activeLocation, dwell, openRegionId])
 
   // Ekran koruyucu geri sayımı: harita canlıyken (screensaver=false) kendini
   // yeniden zamanlayarak son etkinlikten SCREENSAVER_MS geçtiğinde devreye
   // girer. lastActivity bir ref olduğundan imleç hareketi başına render yok.
+  //
+  // KRİTİK: bir pin AKTİF (üzerinde imleç/figür → video oynuyor), dwell geri
+  // sayımında veya BÖLGE PENCERESİ açıkken zamanlayıcı HİÇ çalışmaz — imleç
+  // kımıldamasa bile ekran koruyucu açılmaz. Durum bırakılınca (→ null) effect
+  // yeniden kurulur ve (yukarıda tazelenen) lastActivity'den 90sn sayılır.
   useEffect(() => {
-    if (screensaver) return
+    if (screensaver || activeLocation || dwell || openRegionId) return
     let id: number
     const tick = (): void => {
       const idleFor = Date.now() - lastActivityRef.current
@@ -233,16 +329,17 @@ export function MapScreen(): React.JSX.Element {
     }
     id = window.setTimeout(tick, SCREENSAVER_MS)
     return () => window.clearTimeout(id)
-  }, [screensaver])
+  }, [screensaver, activeLocation, dwell, openRegionId])
 
   const dismissScreensaver = useCallback(() => {
     lastActivityRef.current = Date.now()
     setScreensaver(false)
   }, [])
 
-  // Boşta önizleme döngüsü (10 sn'de bir sıradaki pin) — yalnız tamamen
+  // Boşta önizleme döngüsü (10 sn'de bir sıradaki öğe) — yalnız tamamen
   // boştayken döner. PopupLayer'a ve il boyama/baloncuk gizlemeye tek kaynak.
-  const idle = !activeLocation && !dwell && !screensaver
+  // Bölge penceresi açıkken (openRegionId) döngü durur.
+  const idle = !activeLocation && !dwell && !screensaver && !openRegionId
 
   // "idle" YENİ başladığında (screen saver kapandı, pin pasifleşti veya dwell
   // iptal oldu — hepsi aynı "boşta yeniden başlama" anı) standby döngüsü
@@ -258,16 +355,32 @@ export function MapScreen(): React.JSX.Element {
     return () => window.clearTimeout(id)
   }, [idle])
 
+  // Standby önizleme öğeleri: serbest pinler + bölge KÜMELERİ (bölge tek birim
+  // olarak sıraya girer — kullanıcı isteği). Döngü bunların arasında döner.
+  type PreviewItem =
+    | { kind: 'location'; location: EksimLocation }
+    | { kind: 'region'; cluster: RegionClusterData }
+  const previewItems = useMemo<PreviewItem[]>(() => {
+    const items: PreviewItem[] = loose.map((location) => ({ kind: 'location', location }))
+    for (const cluster of clusters) items.push({ kind: 'region', cluster })
+    return items
+  }, [loose, clusters])
+
   useEffect(() => {
-    if (!idle || !standbyReady) return
+    if (!idle || !standbyReady || previewItems.length === 0) return
     const id = window.setInterval(
-      () => setCycleIndex((i) => (i + 1) % EKSIM_LOCATIONS.length),
+      () => setCycleIndex((i) => (i + 1) % previewItems.length),
       CYCLE_MS
     )
     return () => window.clearInterval(id)
-  }, [idle, standbyReady])
-  const previewLocation =
-    idle && standbyReady ? EKSIM_LOCATIONS[cycleIndex % EKSIM_LOCATIONS.length] : null
+  }, [idle, standbyReady, previewItems])
+
+  const previewItem =
+    idle && standbyReady && previewItems.length > 0
+      ? previewItems[cycleIndex % previewItems.length]
+      : null
+  const previewLocation = previewItem?.kind === 'location' ? previewItem.location : null
+  const previewRegion = previewItem?.kind === 'region' ? previewItem.cluster : null
 
   // "Meşgul" pin: aktif > dwell(countdown) > idle-önizleme(preview). İlin
   // boyanmasına ve MagicRings'e tek kaynak.
@@ -310,9 +423,12 @@ export function MapScreen(): React.JSX.Element {
     >
       <BrandLogo />
 
+      <SectorSidebar selected={selectedSector} onSelect={setSelectedSector} />
+
       {/* PERF: ekran koruyucu z-60'ta tam opak kaplıyor; altındaki parçacık
-          döngüsünü ve EnergyGrid'i o pencerede durdurmak görünürde hiçbir şeyi
-          değiştirmez ama açılıştaki/boştaki en ağır CPU/GPU burst'ünü keser. */}
+          döngüsünü ve ConnectionGrid'leri o pencerede durdurmak görünürde
+          hiçbir şeyi değiştirmez ama açılıştaki/boştaki en ağır CPU/GPU
+          burst'ünü keser. */}
       <MapBackground
         paused={!!activeLocation || screensaver}
         particleScale={budget.particleScale}
@@ -328,9 +444,35 @@ export function MapScreen(): React.JSX.Element {
             />
           )}
 
-          {!screensaver && <EnergyGrid locations={EKSIM_LOCATIONS} />}
+          {!screensaver && (
+            <>
+              <CityLights />
+              {connectionGroups.map(([sector, locs]) => (
+                <ConnectionGrid
+                  key={sector}
+                  locations={locs}
+                  variant={SECTOR_META[sector].connection}
+                  color={SECTOR_META[sector].color}
+                />
+              ))}
+              {/* Sıkışık bölge kümeleri (il sınırları + mini özet). Dokununca
+                  büyütülmüş bölge penceresi açılır. */}
+              <AnimatePresence>
+                {clusters.map((c) => (
+                  <RegionCluster
+                    key={c.region.id}
+                    region={c.region}
+                    members={c.members}
+                    state={previewRegion?.region.id === c.region.id ? 'preview' : 'idle'}
+                    onOpen={() => handleOpenRegion(c.region.id)}
+                  />
+                ))}
+              </AnimatePresence>
+            </>
+          )}
 
-          {EKSIM_LOCATIONS.map((loc) => (
+          {/* Serbest (kümelenmemiş) pinler — kümeye ait olanlar bölge penceresinde. */}
+          {loose.map((loc) => (
             <LocationMarker
               key={loc.id}
               location={loc}
@@ -403,19 +545,56 @@ export function MapScreen(): React.JSX.Element {
         <ActiveVideoBanner active={!!activeLocation} glowScale={budget.strandsGlow} />
       )}
 
-      {/* Pin popup katmanı (idle tanıtım + geri sayım + aktif detay). */}
+      {/* Pin popup katmanı (idle tanıtım + geri sayım + aktif detay). Bölge
+          penceresi açıkken gizlenir (pencere kendi popup katmanını taşır). */}
       <PopupLayer
         activeLocation={activeLocation}
         dwell={dwell}
         previewLocation={previewLocation}
-        hidden={screensaver}
+        hidden={screensaver || !!openRegionId}
         svgRef={svgRef}
         containerRef={containerRef}
       />
 
+      {/* Standby'da sıra bölgeye gelince bölge özeti (pencere AÇILMADAN). */}
+      <div className="pointer-events-none absolute inset-0 z-30">
+        <AnimatePresence>
+          {previewRegion && !screensaver && (
+            <RegionPopup
+              key={previewRegion.region.id}
+              region={previewRegion.region}
+              members={previewRegion.members}
+              svgRef={svgRef}
+              containerRef={containerRef}
+            />
+          )}
+        </AnimatePresence>
+      </div>
+
       <div className="pointer-events-none absolute inset-0 z-20">
         <MapIdlePanel show={!activeLocation && !screensaver} />
       </div>
+
+      {/* Sıkışık bölgenin büyütülmüş penceresi (kümeye dokununca). Ana haritaya
+          zoom EKLEMEDEN, bölgeyi ayrı SVG'de büyütür — koordinat sapması olmaz
+          (bkz. RegionDetailOverlay). AnimatePresence ile açılış/kapanış geçişi. */}
+      <AnimatePresence>
+        {openCluster && (
+          <RegionDetailOverlay
+            key={openCluster.region.id}
+            region={openCluster.region}
+            members={openCluster.members}
+            mainSvgRef={svgRef}
+            svgRef={overlaySvgRef}
+            figureTouch={figureTouch}
+            activeLocation={activeLocation}
+            dwell={dwell}
+            markerStateFor={markerStateFor}
+            onMarkerHover={handleMarkerHover}
+            onClose={handleCloseRegion}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Ekran koruyucu (yalnız map penceresi) — açılışta + 90 sn hareketsizlikte.
           AnimatePresence ile giriş/çıkış animasyonlu; dokununca canlı haritaya. */}

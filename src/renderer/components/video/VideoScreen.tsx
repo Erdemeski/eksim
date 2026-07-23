@@ -8,10 +8,12 @@ import { BrandLogo } from '../brand/BrandLogo'
 import type { EksimLocation } from '@shared/types'
 
 const SECTOR_LABEL: Record<EksimLocation['sector'], string> = {
+  dicle: 'Dicle',
   energy: 'Enerji',
   food: 'Gıda'
 }
 const SECTOR_ACCENT: Record<EksimLocation['sector'], string> = {
+  dicle: 'text-eksim-dicle',
   energy: 'text-eksim-energy',
   food: 'text-eksim-food'
 }

@@ -37,7 +37,7 @@ import { resolvePerfTier } from './perfTier'
  *    Blocklist'i bypass etmek yerine Chromium'un kendi güvenli kararına
  *    (gerekirse software decode) güveniliyor; asıl performans kazancı render
  *    tarafındaki (harita) iş yükünü azaltmaktan geliyor (bkz. GSAP fps sınırı,
- *    EnergyGrid MST, aurora sadeleştirmesi).
+ *    ConnectionGrid MST, aurora sadeleştirmesi).
  */
 function configureChromiumForKiosk(): void {
   // A) Kiosk'ta her iki ekran da daima ön planda kabul edilsin.

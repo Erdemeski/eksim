@@ -6,15 +6,17 @@ export const FACILITY_LABEL: Record<FacilityKind, string> = {
   wind: 'Rüzgâr Enerjisi',
   solar: 'Güneş Enerjisi',
   hydro: 'Hidroelektrik',
-  food: 'Gıda'
+  food: 'Gıda',
+  grid: 'Elektrik Dağıtımı'
 }
 
-/** Tür → vurgu rengi (enerji tonları mavi ailesi, gıda yeşil). */
+/** Tür → vurgu rengi (enerji tonları mavi ailesi, gıda yeşil, dağıtım amber). */
 export const FACILITY_COLOR: Record<FacilityKind, string> = {
   wind: '#2EA6FF',
   solar: '#FDB813',
   hydro: '#38BDF8',
-  food: '#34D399'
+  food: '#34D399',
+  grid: '#F59E0B'
 }
 
 /**
@@ -34,15 +36,18 @@ export function accentColor(kinds: FacilityKind[]): string {
 interface SectorIconProps {
   kind: FacilityKind
   className?: string
+  /** currentColor ile ikon rengini belirlemek için (ör. { color: '#34D399' }). */
+  style?: React.CSSProperties
 }
 
 /**
  * Popup içindeki küçük tür ikonu — ince çizgili (stroke=currentColor), premium
  * minimal. 24×24 viewBox; renk ebeveynden `color` ile gelir.
  */
-export function SectorIcon({ kind, className = '' }: SectorIconProps): React.JSX.Element {
+export function SectorIcon({ kind, className = '', style }: SectorIconProps): React.JSX.Element {
   const common = {
     className,
+    style,
     viewBox: '0 0 24 24',
     fill: 'none',
     stroke: 'currentColor',
@@ -84,6 +89,14 @@ export function SectorIcon({ kind, className = '' }: SectorIconProps): React.JSX
           <path d="M12 20c0-5 0-9 6-12-.3 6-2.4 9-6 10.5" />
           <path d="M12 20c0-4-1-7-5-9" />
           <path d="M12 20v-6" />
+        </svg>
+      )
+    case 'grid':
+      return (
+        <svg {...common}>
+          <path d="M12 2v20" />
+          <path d="M7 6h10M6 11h12M5 16h14" />
+          <path d="M9 6 5 21M15 6l4 15" />
         </svg>
       )
   }

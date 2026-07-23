@@ -13,7 +13,7 @@ export interface Point {
 export type LngLat = [number, number]
 
 /** Eksim Holding sektörleri. */
-export type Sector = 'energy' | 'food'
+export type Sector = 'energy' | 'dicle' | 'food'
 
 /** Harita üzerindeki bir tesis/lokasyon kaydı. */
 export interface EksimLocation {
@@ -61,7 +61,7 @@ export interface EksimLocation {
 }
 
 /** Tesis görsel tipi (amblem + ikon seçimi için). */
-export type FacilityKind = 'wind' | 'solar' | 'hydro' | 'food'
+export type FacilityKind = 'wind' | 'solar' | 'hydro' | 'food' | 'grid'
 
 /** Bir santral türünün kurulu gücü (MW). */
 export interface FacilityCapacity {

@@ -166,6 +166,11 @@ export function LocationPopup({
 }: LocationPopupProps): React.JSX.Element {
   const sections = projectSections(location)
   const isActive = mode === 'active'
+  // Temsili (placeholder) Dicle/Gıda noktalarında henüz kurulu güç verisi
+  // yok (totalMw: 0) — MW sayacı ve proje bölümleri "0 MW"/"—" göstermek
+  // yerine tamamen gizlenir; kart yalnız başlık + isim (+ aktifte açıklama)
+  // gösterecek şekilde zarifçe küçülür.
+  const hasCapacity = location.totalMw > 0
   // Alt yerleşim: çıpa (il alt kenarı) kartın ÜST-ortasıdır. Üst yerleşim:
   // çıpa (il üst kenarı) kartın ALT-ortasıdır → kart kendi yüksekliği kadar
   // yukarı (translateY -100%). Statik transform (animasyon değil) → iç cam
@@ -188,7 +193,7 @@ export function LocationPopup({
           exit={{ opacity: 0, scale: 0.9 }}
           transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
           style={{
-            width: isActive ? 368 : 296,
+            width: hasCapacity ? (isActive ? 368 : 296) : isActive ? 320 : 220,
             borderRadius: 24,
             background: GLASS_BG,
             backdropFilter: 'blur(16px) saturate(1.5)',
@@ -228,7 +233,9 @@ export function LocationPopup({
             )}
           </div>
 
-          {/* Proje bölümleri — her proje ayrı satır, aralarında ayraç çizgisi. */}
+          {/* Proje bölümleri — her proje ayrı satır, aralarında ayraç çizgisi.
+              Kurulu güç verisi olmayan (temsili) noktalarda tamamen gizlenir. */}
+          {hasCapacity && (
           <div className="mt-1.5 flex flex-col px-4">
             {sections.map((s, i) => {
               const kc = FACILITY_COLOR[s.kind]
@@ -273,9 +280,10 @@ export function LocationPopup({
               )
             })}
           </div>
+          )}
 
-          {/* countdown: accent ilerleme çubuğu. */}
-          {mode === 'countdown' && (
+          {/* countdown: accent ilerleme çubuğu (yalnız kurulu güç varsa). */}
+          {hasCapacity && mode === 'countdown' && (
             <div className="mx-4 mb-1 h-1 overflow-hidden rounded-full bg-white/10">
               <div
                 className="h-full rounded-full"
@@ -284,20 +292,25 @@ export function LocationPopup({
             </div>
           )}
 
-          {/* Alt satır: büyük parlayan toplam MW + (aktifte) açıklama. */}
+          {/* Alt satır: büyük parlayan toplam MW + (aktifte) açıklama. Kurulu
+              güç verisi olmayan (temsili) noktalarda MW bloğu atlanır; satır
+              yalnız aktif açıklama varsa render edilir (boş dolgu yaratmasın). */}
+          {(hasCapacity || isActive) && (
           <div className="flex items-end gap-4 px-4 pb-4 pt-1.5">
-            <div className="shrink-0">
-              <p
-                className="text-[30px] font-extrabold leading-none tabular-nums text-white"
-                style={{ textShadow: `0 0 16px ${color}b3, 0 0 40px ${color}59` }}
-              >
-                <AnimatedNumber value={location.totalMw} />
-                <span className="ml-1.5 text-[17px] font-bold text-white/90">MW</span>
-              </p>
-              <p className="mt-1.5 text-[9.5px] font-semibold uppercase tracking-[0.24em] text-white/50">
-                Kurulu Güç
-              </p>
-            </div>
+            {hasCapacity && (
+              <div className="shrink-0">
+                <p
+                  className="text-[30px] font-extrabold leading-none tabular-nums text-white"
+                  style={{ textShadow: `0 0 16px ${color}b3, 0 0 40px ${color}59` }}
+                >
+                  <AnimatedNumber value={location.totalMw} />
+                  <span className="ml-1.5 text-[17px] font-bold text-white/90">MW</span>
+                </p>
+                <p className="mt-1.5 text-[9.5px] font-semibold uppercase tracking-[0.24em] text-white/50">
+                  Kurulu Güç
+                </p>
+              </div>
+            )}
 
             {isActive && (
               <motion.p
@@ -310,6 +323,7 @@ export function LocationPopup({
               </motion.p>
             )}
           </div>
+          )}
         </motion.div>
       </div>
     </div>

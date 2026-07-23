@@ -127,8 +127,9 @@ body,
 
 /* ---- Harita şebeke animasyonları — CSS-NATİF (compositor-only) ----
  *
- * PERF: EnergyGrid'in ~16 çizgisi/8 şehir ışığı önceden GSAP (JS ana iş
- * parçacığında, her karede) titretiliyordu. Bunlar salt `transform`/`opacity`
+ * PERF: ConnectionGrid'in (eski adıyla EnergyGrid) ~16 çizgisi/8 şehir ışığı
+ * önceden GSAP (JS ana iş parçacığında, her karede) titretiliyordu. Bunlar
+ * salt `transform`/`opacity`
  * — tarayıcı bu ikisini compositor thread'inde (GPU, JS'siz) çalıştırabilir.
  * CSS keyframe'e taşımak ana iş parçacığı yükünü kaldırır, GÖRÜNÜM birebir
  * aynı kalır. Bu da video penceresiyle paylaşılan GPU sürecindeki rekabeti
@@ -151,13 +152,25 @@ body,
 }
 
 /* Enerji ağı akan çizgisi — stroke-dashoffset Chromium'da CSS-animatable;
-   GSAP'ten buraya taşındı → EnergyGrid tamamen JS'siz. dasharray "3 37"
+   GSAP'ten buraya taşındı → ConnectionGrid tamamen JS'siz. dasharray "3 37"
    (toplam 40) olduğundan -40'a kayma kusursuz döngü verir. */
 .eg-flow {
   animation: eksim-eg-flow 2.4s linear infinite;
 }
 @keyframes eksim-eg-flow {
   to { stroke-dashoffset: -40; }
+}
+
+/* Gıda Grubu "tedarik yolu" (konveyör) akışı — elektrik ızgarasıyla AYNI
+   ucuz teknik (stroke-dashoffset, compositor-only, JS yok) ama glow filtresi
+   HİÇ kullanmaz → elektrik varyantından bile daha hafif. dasharray "0.9 5.1"
+   (toplam 6) olduğundan -24'e (6*4) kayma kusursuz döngü verir; sabit hız
+   (linear) "sabit hızda akan ürün" hissini verir. */
+.cg-belt {
+  animation: eksim-cg-belt 2.6s linear infinite;
+}
+@keyframes eksim-cg-belt {
+  to { stroke-dashoffset: -24; }
 }
 
 /* Türkiye sınırı neon bulutunun çok yavaş nefesi. Grup opacity'si compositor'da
@@ -196,6 +209,7 @@ body,
   .eg-flow,
   .eg-base,
   .eg-city,
+  .cg-belt,
   .eksim-bubble-float,
   .eksim-rings-float,
   .eksim-province-breathe,
